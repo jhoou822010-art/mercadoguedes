@@ -1,0 +1,115 @@
+import { useEffect, useState } from "react";
+import { NavLink, Outlet, useLocation } from "react-router-dom";
+import { useAuth } from "../contexts/AuthContext";
+
+interface Item { para: string; rotulo: string; icone: string; admin?: boolean }
+
+const ITENS: Item[] = [
+  { para: "/", rotulo: "Painel", icone: "▦" },
+  { para: "/caixa", rotulo: "Caixa (venda)", icone: "🛒" },
+  { para: "/vendas", rotulo: "Vendas e fiado", icone: "🧾" },
+  { para: "/produtos", rotulo: "Produtos", icone: "▤" },
+  { para: "/estoque", rotulo: "Estoque", icone: "⇅" },
+  { para: "/etiquetas", rotulo: "Etiquetas", icone: "🏷" },
+  { para: "/relatorios", rotulo: "Relatórios", icone: "≡" },
+  { para: "/backup", rotulo: "Backup", icone: "⤓", admin: true },
+  { para: "/configuracoes", rotulo: "Usuários e loja", icone: "⚙", admin: true },
+  { para: "/teclado", rotulo: "Teclado do caixa", icone: "⌨", admin: true },
+];
+
+export function Logo({ claro = false }: { claro?: boolean }) {
+  return (
+    <div className="flex items-center gap-2.5">
+      <img src={`${import.meta.env.BASE_URL}favicon.svg`} alt="" className="h-9 w-9" />
+      <div className="leading-tight">
+        <div className={`text-lg font-bold ${claro ? "text-white" : "text-petroleo-800"}`}>Loja Fácil</div>
+        <div className={`text-[11px] ${claro ? "text-petroleo-200" : "text-slate-500"}`}>Controle de loja sem complicação</div>
+      </div>
+    </div>
+  );
+}
+
+function Menu({ onNavegar }: { onNavegar?: () => void }) {
+  const { ehAdmin } = useAuth();
+  return (
+    <nav className="flex flex-col gap-1">
+      {ITENS.filter((i) => !i.admin || ehAdmin).map((i) => (
+        <NavLink
+          key={i.para}
+          to={i.para}
+          end={i.para === "/"}
+          onClick={onNavegar}
+          className={({ isActive }) =>
+            `flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
+              isActive ? "bg-white/15 text-white" : "text-petroleo-100 hover:bg-white/10 hover:text-white"
+            }`
+          }
+        >
+          <span className="w-5 text-center text-base">{i.icone}</span>
+          {i.rotulo}
+        </NavLink>
+      ))}
+    </nav>
+  );
+}
+
+function Usuario() {
+  const { perfil, config, sair } = useAuth();
+  return (
+    <div className="border-t border-white/10 pt-4 text-sm">
+      {config && <p className="mb-2 truncate text-xs text-petroleo-200">{config.nome_loja}</p>}
+      <p className="truncate font-medium text-white">{perfil?.nome}</p>
+      <p className="mb-3 text-xs text-petroleo-200">{perfil?.papel === "admin" ? "Administrador" : "Operador"}</p>
+      <button onClick={sair} className="w-full rounded-lg border border-white/20 px-3 py-2 text-xs font-medium text-white hover:bg-white/10">
+        Sair
+      </button>
+    </div>
+  );
+}
+
+export function Layout() {
+  const [menuAberto, setMenuAberto] = useState(false);
+  const local = useLocation();
+  useEffect(() => setMenuAberto(false), [local.pathname]);
+
+  return (
+    <div className="min-h-screen lg:flex">
+      {/* Barra lateral (computador) */}
+      <aside className="nao-imprimir hidden w-64 shrink-0 flex-col justify-between bg-petroleo-800 p-4 lg:sticky lg:top-0 lg:flex lg:h-screen">
+        <div className="space-y-6">
+          <Logo claro />
+          <Menu />
+        </div>
+        <Usuario />
+      </aside>
+
+      {/* Barra superior (celular/tablet) */}
+      <header className="nao-imprimir sticky top-0 z-20 flex items-center justify-between bg-petroleo-800 px-4 py-3 lg:hidden">
+        <Logo claro />
+        <button onClick={() => setMenuAberto(true)} className="rounded-lg p-2 text-2xl leading-none text-white hover:bg-white/10" aria-label="Abrir menu">
+          ☰
+        </button>
+      </header>
+      {menuAberto && (
+        <div className="nao-imprimir fixed inset-0 z-30 bg-slate-900/50 lg:hidden" onClick={() => setMenuAberto(false)}>
+          <div className="flex h-full w-72 max-w-[85vw] flex-col justify-between bg-petroleo-800 p-4" onClick={(e) => e.stopPropagation()}>
+            <div className="space-y-6">
+              <div className="flex items-start justify-between">
+                <Logo claro />
+                <button onClick={() => setMenuAberto(false)} className="p-1 text-white" aria-label="Fechar menu">✕</button>
+              </div>
+              <Menu onNavegar={() => setMenuAberto(false)} />
+            </div>
+            <Usuario />
+          </div>
+        </div>
+      )}
+
+      <main className="min-w-0 flex-1 px-4 py-5 sm:px-6 lg:px-8 lg:py-8">
+        <div className="mx-auto max-w-7xl">
+          <Outlet />
+        </div>
+      </main>
+    </div>
+  );
+}

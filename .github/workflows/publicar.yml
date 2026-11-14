@@ -1,0 +1,74 @@
+# Publica o Loja Fácil no GitHub Pages a cada envio (push) na branch main.
+# Antes de usar: Settings → Pages → Source: "GitHub Actions"
+# e cadastre em Settings → Secrets and variables → Actions → Secrets:
+#   VITE_SUPABASE_URL  e  VITE_SUPABASE_ANON_KEY
+name: Publicar no GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: # permite publicar manualmente pela aba Actions
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  publicar:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - name: Baixar o código
+        uses: actions/checkout@v4
+
+      - name: Instalar pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Instalar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Instalar dependências
+        run: pnpm install --frozen-lockfile
+
+      - name: Conferir tipos (pnpm check)
+        run: pnpm check
+
+      - name: Conferir se as chaves do Supabase foram cadastradas
+        env:
+          URL: ${{ secrets.VITE_SUPABASE_URL }}
+        run: |
+          if [ -z "$URL" ]; then
+            echo "::error::Falta cadastrar VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY em Settings → Secrets and variables → Actions."
+            exit 1
+          fi
+
+      - name: Gerar o site (pnpm build)
+        run: pnpm build
+        env:
+          VITE_BASE: /${{ github.event.repository.name }}/
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+
+      - name: Preparar o GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Enviar o site
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+      - name: Publicar
+        id: deploy
+        uses: actions/deploy-pages@v4

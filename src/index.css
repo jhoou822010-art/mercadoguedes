@@ -1,0 +1,84 @@
+@import "tailwindcss";
+
+/* Identidade visual do Loja Fácil */
+@theme {
+  --color-petroleo-50: #eef7f8;
+  --color-petroleo-100: #d5ebee;
+  --color-petroleo-200: #a9d4db;
+  --color-petroleo-500: #1d7385;
+  --color-petroleo-600: #155f6f;
+  --color-petroleo-700: #0f4c5c;
+  --color-petroleo-800: #0b3a47;
+  --color-petroleo-900: #082a33;
+
+  --color-ok-50: #effaf2;
+  --color-ok-100: #d8f2df;
+  --color-ok-600: #2e9a52;
+  --color-ok-700: #237a41;
+
+  --color-atencao-50: #fff8e6;
+  --color-atencao-100: #fdecbf;
+  --color-atencao-500: #e3a008;
+  --color-atencao-700: #8f6200;
+
+  --color-critico-50: #fdeeee;
+  --color-critico-100: #f9d4d4;
+  --color-critico-600: #c62828;
+  --color-critico-700: #a11d1d;
+
+  --color-acao-500: #f28c28;
+  --color-acao-600: #dd7410;
+  --color-acao-700: #b85d0a;
+
+  --font-sans: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+@layer base {
+  html { -webkit-text-size-adjust: 100%; }
+  body { @apply bg-slate-50 text-slate-800 antialiased; }
+  input, select, textarea { font-size: 16px; } /* evita zoom automático no celular */
+}
+
+@utility btn { @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-petroleo-500; }
+@utility btn-primario { @apply btn bg-petroleo-700 text-white hover:bg-petroleo-800; }
+@utility btn-acao { @apply btn bg-acao-500 text-white hover:bg-acao-600; }
+@utility btn-secundario { @apply btn border border-slate-300 bg-white text-slate-700 hover:bg-slate-100; }
+@utility btn-perigo { @apply btn bg-critico-600 text-white hover:bg-critico-700; }
+@utility btn-pequeno { @apply px-3 py-1.5 text-xs; }
+@utility campo { @apply w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-800 placeholder:text-slate-400 focus:border-petroleo-500 focus:outline-none focus:ring-2 focus:ring-petroleo-100 disabled:bg-slate-100; }
+@utility campo-erro { @apply border-critico-600 focus:border-critico-600 focus:ring-critico-100; }
+@utility rotulo { @apply mb-1 block text-sm font-medium text-slate-700; }
+@utility cartao { @apply rounded-xl border border-slate-200 bg-white shadow-sm; }
+
+@layer components {
+  .tabela { @apply w-full text-left text-sm; }
+  .tabela th { @apply whitespace-nowrap border-b border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500; }
+  .tabela td { @apply border-b border-slate-100 px-3 py-2 align-middle; }
+  .tabela tbody tr:hover { @apply bg-petroleo-50/50; }
+}
+
+/* ---------- Impressão ---------- */
+@media print {
+  @page { margin: 8mm; }
+  body { background: #fff !important; }
+  .nao-imprimir { display: none !important; }
+  .somente-impressao { display: block !important; }
+  .area-impressao { padding: 0 !important; margin: 0 !important; box-shadow: none !important; border: 0 !important; }
+  .etiqueta { break-inside: avoid; }
+  table { break-inside: auto; }
+  tr { break-inside: avoid; }
+}
+.somente-impressao { display: none; }
+
+/* ---------- Comprovante (cupom 80 mm / 58 mm) ---------- */
+.cupom { font-family: "Courier New", ui-monospace, monospace; color: #000; background: #fff; width: 72mm; padding: 3mm; font-size: 11px; line-height: 1.35; }
+.cupom.cupom-58 { width: 48mm; font-size: 9px; }
+.cupom hr { border: 0; border-top: 1px dashed #000; margin: 4px 0; }
+.cupom .linha { display: flex; justify-content: space-between; gap: 6px; }
+.cupom .centro { text-align: center; }
+.area-cupom { display: none; }
+@media print {
+  body.modo-cupom #root { display: none !important; }
+  body.modo-cupom .area-cupom { display: block !important; }
+  body.modo-cupom .cupom { padding: 0 1mm; }
+}
