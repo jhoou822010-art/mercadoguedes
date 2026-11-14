@@ -1,6 +1,6 @@
 # Publica o Loja Fácil no GitHub Pages a cada envio (push) na branch main.
 # Antes de usar: Settings → Pages → Source: "GitHub Actions"
-# e cadastre em Settings → Secrets and variables → Actions → Secrets:
+# e cadastre em Settings → Secrets and variables → Actions (aba Secrets ou Variables):
 #   VITE_SUPABASE_URL  e  VITE_SUPABASE_ANON_KEY
 name: Publicar no GitHub Pages
 
@@ -47,19 +47,27 @@ jobs:
 
       - name: Conferir se as chaves do Supabase foram cadastradas
         env:
-          URL: ${{ secrets.VITE_SUPABASE_URL }}
+          URL: ${{ secrets.VITE_SUPABASE_URL || vars.VITE_SUPABASE_URL }}
+          CHAVE: ${{ secrets.VITE_SUPABASE_ANON_KEY || vars.VITE_SUPABASE_ANON_KEY }}
         run: |
-          if [ -z "$URL" ]; then
-            echo "::error::Falta cadastrar VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY em Settings → Secrets and variables → Actions."
+          falta=""
+          [ -z "$URL" ] && falta="$falta VITE_SUPABASE_URL"
+          [ -z "$CHAVE" ] && falta="$falta VITE_SUPABASE_ANON_KEY"
+          if [ -n "$falta" ]; then
+            echo "::error::Não encontrei:$falta. Cadastre em Settings → Secrets and variables → Actions (aba Secrets ou Variables), NESTE repositório, com o nome exatamente igual (maiúsculas, sem espaços)."
             exit 1
           fi
+          case "$URL" in
+            https://*.supabase.co|https://*.supabase.co/) echo "URL do Supabase ok." ;;
+            *) echo "::warning::VITE_SUPABASE_URL não parece uma URL do Supabase (esperado https://xxxx.supabase.co)." ;;
+          esac
 
       - name: Gerar o site (pnpm build)
         run: pnpm build
         env:
           VITE_BASE: /${{ github.event.repository.name }}/
-          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
-          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL || vars.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY || vars.VITE_SUPABASE_ANON_KEY }}
 
       - name: Preparar o GitHub Pages
         uses: actions/configure-pages@v5
