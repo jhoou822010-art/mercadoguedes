@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { supabase, mensagemErro } from "../lib/supabase";
-import { fmtDataHora, fmtMoeda, fmtQtd, fmtData } from "../lib/format";
+import { fmtDataHora, fmtQtd, fmtData } from "../lib/format";
 import type { Movimentacao, ProdutoView, ResumoPainel } from "../lib/types";
 import { useAuth } from "../contexts/AuthContext";
 import { Cabecalho, Carregando, SeloTipo, SeloValidade, Vazio, Aviso } from "../components/Ui";
+import { OlhoValores } from "../components/OlhoValores";
+import { useMoeda } from "../lib/privacidade";
 
 function Indicador({ titulo, valor, detalhe, para, cor }: { titulo: string; valor: string; detalhe?: string; para: string; cor: string }) {
   return (
@@ -18,6 +20,7 @@ function Indicador({ titulo, valor, detalhe, para, cor }: { titulo: string; valo
 
 export default function Painel() {
   const { perfil, ehAdmin, config, tem0006, valoresOcultos } = useAuth();
+  const moeda = useMoeda();
   const [resumo, setResumo] = useState<ResumoPainel | null>(null);
   const [baixos, setBaixos] = useState<ProdutoView[]>([]);
   const [vencendo, setVencendo] = useState<ProdutoView[]>([]);
@@ -83,6 +86,7 @@ export default function Painel() {
         descricao={config ? `${config.nome_loja} · resumo da loja agora` : "Resumo da loja agora"}
         acoes={
           <>
+            <OlhoValores />
             <Link to="/caixa" className="btn-acao">🛒 Abrir o caixa</Link>
             {ehAdmin && <Link to="/produtos?novo=1" className="btn-secundario">+ Cadastrar produto</Link>}
             <Link to="/estoque" className="btn-primario">⇅ Movimentar estoque</Link>
@@ -101,7 +105,7 @@ export default function Painel() {
               {hoje && (
                 <Link to="/vendas" className="cartao flex flex-wrap items-center justify-between gap-2 border-l-4 border-l-acao-500 p-4 hover:shadow-md">
                   <span className="text-sm font-semibold uppercase tracking-wide text-slate-500">Vendas de hoje</span>
-                  <span className="text-lg"><strong>{hoje.qtd}</strong> venda(s) · <strong className="text-2xl">{fmtMoeda(hoje.total)}</strong></span>
+                  <span className="text-lg"><strong>{hoje.qtd}</strong> venda(s) · <strong className="text-2xl">{moeda(hoje.total)}</strong></span>
                 </Link>
               )}
               {receber && (
@@ -109,18 +113,18 @@ export default function Painel() {
                   <span>
                     <span className="block text-sm font-semibold uppercase tracking-wide text-slate-500">A receber (fiado + crediário)</span>
                     <span className="text-xs text-slate-500">
-                      Fiado {fmtMoeda(receber.fiado)} · Crediário {fmtMoeda(receber.crediario)} · {receber.clientes} cliente(s)
-                      {receber.atrasado > 0 && <strong className="ml-1 text-critico-600">· atrasado {fmtMoeda(receber.atrasado)}</strong>}
+                      Fiado {moeda(receber.fiado)} · Crediário {moeda(receber.crediario)} · {receber.clientes} cliente(s)
+                      {receber.atrasado > 0 && <strong className="ml-1 text-critico-600">· atrasado {moeda(receber.atrasado)}</strong>}
                     </span>
                   </span>
-                  <strong className="text-2xl">{fmtMoeda(receber.fiado + receber.crediario)}</strong>
+                  <strong className="text-2xl">{moeda(receber.fiado + receber.crediario)}</strong>
                 </Link>
               )}
             </div>
           )}
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
             <Indicador titulo="Produtos ativos" valor={String(resumo.total_produtos)} detalhe={resumo.total_inativos ? `${resumo.total_inativos} inativo(s) · ver lista →` : undefined} para="/produtos" cor="border-l-petroleo-600" />
-            <Indicador titulo="Valor do estoque (custo)" valor={fmtMoeda(resumo.valor_estoque)} para="/relatorios?r=estoque" cor="border-l-petroleo-600" />
+            <Indicador titulo="Valor do estoque (custo)" valor={moeda(resumo.valor_estoque)} para="/relatorios?r=estoque" cor="border-l-petroleo-600" />
             <Indicador titulo="Abaixo do mínimo" valor={String(resumo.abaixo_minimo)} para="/produtos?alerta=minimo" cor={resumo.abaixo_minimo ? "border-l-atencao-500" : "border-l-ok-600"} />
             <Indicador
               titulo="Validade"

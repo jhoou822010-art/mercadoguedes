@@ -11,6 +11,8 @@ import { Modal } from "../components/Modal";
 import { CupomCarne, CupomExtrato, CupomFechamento, CupomVenda, JanelaComprovante } from "../components/Comprovante";
 import { Aviso, Cabecalho, Carregando, Selo, Vazio } from "../components/Ui";
 import { CampoDocumento, erroDocumento } from "../components/CampoDocumento";
+import { OlhoValores } from "../components/OlhoValores";
+import { useMoeda } from "../lib/privacidade";
 
 type Aba = "vendas" | "fiado" | "crediario" | "clientes" | "caixas";
 const ABAS: { id: Aba; rotulo: string }[] = [
@@ -26,7 +28,7 @@ export default function Vendas() {
   const aba = (ABAS.some((a) => a.id === params.get("aba")) ? params.get("aba") : "vendas") as Aba;
   return (
     <div>
-      <Cabecalho titulo="Vendas, fiado e crediário" descricao="Consulte vendas, receba fiados e parcelas, cadastre clientes e confira os caixas." />
+      <Cabecalho titulo="Vendas, fiado e crediário" descricao="Consulte vendas, receba fiados e parcelas, cadastre clientes e confira os caixas." acoes={<OlhoValores />} />
       <div className="nao-imprimir mb-4 flex gap-2 overflow-x-auto pb-1">
         {ABAS.map((a) => (
           <button key={a.id} onClick={() => setParams({ aba: a.id }, { replace: true })}
@@ -105,6 +107,7 @@ function JanelaReceber({ titulo, descricao, valor, onConfirmar, onFechar }: {
 /* ------------------------------ Vendas ------------------------------ */
 
 function ListaVendas() {
+  const moeda = useMoeda();
   const { config, ehAdmin, tem0006, valoresOcultos } = useAuth();
   const avisar = useToast();
   const [dias, setDias] = useState(1);
@@ -138,7 +141,7 @@ function ListaVendas() {
       ["Venda", "Data", "Operador", "Situação", "Subtotal", "Desconto", "Total", "Pagamentos", "Troco", "Cliente", "Itens"],
       lista.map((v) => [v.id, fmtDataHora(v.criado_em), v.usuario_nome, v.status === "concluida" ? "Concluída" : "Cancelada",
         Number(v.subtotal), Number(v.desconto), Number(v.total),
-        v.venda_pagamentos.map((p) => `${NOME_FORMA[p.forma]} ${fmtMoeda(p.valor)}`).join(" + "), Number(v.troco), v.cliente_nome,
+        v.venda_pagamentos.map((p) => `${NOME_FORMA[p.forma]} ${moeda(p.valor)}`).join(" + "), Number(v.troco), v.cliente_nome,
         v.venda_itens.map((i) => `${i.quantidade} ${i.unidade} ${i.produto_nome}`).join(" | ")]));
     avisar("sucesso", `${lista.length} venda(s) exportada(s).`);
   }
@@ -171,12 +174,12 @@ function ListaVendas() {
       {vendas && !valoresOcultos && (
         <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
           <div className="cartao p-4"><p className="text-xs uppercase text-slate-500">Vendas concluídas</p><p className="text-2xl font-bold">{concluidas.length}</p></div>
-          <div className="cartao p-4"><p className="text-xs uppercase text-slate-500">Total vendido</p><p className="text-2xl font-bold">{fmtMoeda(totalVendido)}</p></div>
+          <div className="cartao p-4"><p className="text-xs uppercase text-slate-500">Total vendido</p><p className="text-2xl font-bold">{moeda(totalVendido)}</p></div>
           <div className="cartao col-span-2 p-4 text-sm">
             <p className="mb-1 text-xs uppercase text-slate-500">Por forma de pagamento</p>
             {Object.keys(porForma).length === 0 ? <p className="text-slate-400">—</p> : (
               <div className="flex flex-wrap gap-x-4 gap-y-1">
-                {Object.entries(porForma).map(([f, v]) => <span key={f}>{NOME_FORMA[f as FormaPagamento]}: <strong>{fmtMoeda(v)}</strong></span>)}
+                {Object.entries(porForma).map(([f, v]) => <span key={f}>{NOME_FORMA[f as FormaPagamento]}: <strong>{moeda(v)}</strong></span>)}
               </div>
             )}
           </div>
@@ -196,7 +199,7 @@ function ListaVendas() {
                     <td className="whitespace-nowrap text-xs text-slate-500">{fmtDataHora(v.criado_em)}</td>
                     <td>{v.usuario_nome}</td>
                     <td className="text-xs">{v.venda_pagamentos.map((p) => NOME_FORMA[p.forma]).join(" + ")}{v.cliente_nome && <span className="block text-slate-400">{v.cliente_nome}</span>}</td>
-                    <td className="whitespace-nowrap text-right font-semibold">{fmtMoeda(v.total)}{Number(v.desconto) > 0 && <span className="block text-xs font-normal text-acao-700">desc. {fmtMoeda(v.desconto)}</span>}</td>
+                    <td className="whitespace-nowrap text-right font-semibold">{moeda(v.total)}{Number(v.desconto) > 0 && <span className="block text-xs font-normal text-acao-700">desc. {moeda(v.desconto)}</span>}</td>
                     <td>{v.status === "concluida" ? <Selo cor="ok">Concluída</Selo> : <Selo cor="critico">Cancelada</Selo>}</td>
                     <td className="nao-imprimir text-right"><button className="btn-secundario btn-pequeno" onClick={() => setAberta(v)}>Ver / imprimir</button></td>
                   </tr>
@@ -270,6 +273,7 @@ function JanelaCancelar({ venda, onFechar, onCancelada }: { venda: VendaCompleta
 type FiadoLinha = VendaPagamento & { vendas: { id: number; cliente_nome: string | null; cliente_telefone: string | null; criado_em: string; status: string; usuario_nome: string | null } };
 
 function ListaFiado() {
+  const moeda = useMoeda();
   const { config, valoresOcultos } = useAuth();
   const avisar = useToast();
   const [mostrarRecebidos, setMostrarRecebidos] = useState(false);
@@ -305,7 +309,7 @@ function ListaFiado() {
           <button className={`btn-pequeno btn ${mostrarRecebidos ? "bg-petroleo-700 text-white" : "btn-secundario"}`} onClick={() => setMostrarRecebidos(true)}>Já recebidos</button>
           <button className="btn-secundario btn-pequeno" disabled={!lista?.length} onClick={() => window.print()}>🖨 Imprimir lista</button>
         </div>
-        {lista && !mostrarRecebidos && !valoresOcultos && <p className="text-sm">Total a receber: <strong className="text-lg">{fmtMoeda(total)}</strong></p>}
+        {lista && !mostrarRecebidos && !valoresOcultos && <p className="text-sm">Total a receber: <strong className="text-lg">{moeda(total)}</strong></p>}
       </div>
 
       {!mostrarRecebidos && Object.keys(porCliente).length > 0 && (
@@ -314,7 +318,7 @@ function ListaFiado() {
           <div className="flex flex-wrap gap-2">
             {Object.entries(porCliente).sort((a, b) => b[1] - a[1]).map(([c, v]) => (
               <button key={c} className="rounded-full bg-slate-100 px-3 py-1 hover:bg-petroleo-50" onClick={() => setExtrato(c)}>
-                {c}{!valoresOcultos && <>: <strong>{fmtMoeda(v)}</strong></>} 🧾
+                {c}{!valoresOcultos && <>: <strong>{moeda(v)}</strong></>} 🧾
               </button>
             ))}
           </div>
@@ -333,7 +337,7 @@ function ListaFiado() {
                     <td><span className="font-medium">{f.vendas.cliente_nome}</span>{f.vendas.cliente_telefone && <span className="block text-xs text-slate-400">{f.vendas.cliente_telefone}</span>}</td>
                     <td className="font-mono">{f.venda_id}</td>
                     <td className="whitespace-nowrap text-xs text-slate-500">{fmtDataHora(f.vendas.criado_em)}</td>
-                    <td className="text-right font-semibold">{fmtMoeda(f.valor)}</td>
+                    <td className="text-right font-semibold">{moeda(f.valor)}</td>
                     <td className={`text-right ${mostrarRecebidos ? "" : "nao-imprimir"}`}>
                       {mostrarRecebidos
                         ? <span className="text-xs text-slate-500">{fmtDataHora(f.fiado_recebido_em)} · {f.fiado_recebido_forma && NOME_FORMA[f.fiado_recebido_forma]} · {f.fiado_recebido_por}</span>
@@ -343,7 +347,7 @@ function ListaFiado() {
                 ))}
               </tbody>
               {!mostrarRecebidos && !valoresOcultos && (
-                <tfoot><tr><td colSpan={3} className="font-semibold">Total a receber</td><td className="text-right font-bold">{fmtMoeda(total)}</td><td className="nao-imprimir"></td></tr></tfoot>
+                <tfoot><tr><td colSpan={3} className="font-semibold">Total a receber</td><td className="text-right font-bold">{moeda(total)}</td><td className="nao-imprimir"></td></tr></tfoot>
               )}
             </table>
           </div>
@@ -359,7 +363,7 @@ function ListaFiado() {
           onConfirmar={async (forma) => {
             const { error } = await supabase.rpc("receber_fiado", { p_pagamento_id: recebendo.id, p_forma: forma });
             if (error) return mensagemErro(error);
-            avisar("sucesso", `Fiado de ${recebendo.vendas.cliente_nome} (${fmtMoeda(recebendo.valor)}) recebido em ${NOME_FORMA[forma].toLowerCase()}.`);
+            avisar("sucesso", `Fiado de ${recebendo.vendas.cliente_nome} (${moeda(recebendo.valor)}) recebido em ${NOME_FORMA[forma].toLowerCase()}.`);
             setRecebendo(null);
             void carregar();
             return null;
@@ -392,6 +396,7 @@ type ParcelaLinha = Parcela & { clientes: { nome: string; telefone: string | nul
 type FiltroParcela = "abertas" | "atrasadas" | "pagas";
 
 function ListaCrediario() {
+  const moeda = useMoeda();
   const { config, valoresOcultos } = useAuth();
   const avisar = useToast();
   const [filtro, setFiltro] = useState<FiltroParcela>("abertas");
@@ -439,8 +444,8 @@ function ListaCrediario() {
         </div>
         {lista && filtro !== "pagas" && !valoresOcultos && (
           <p className="text-sm">
-            {filtro === "abertas" ? "Em aberto" : "Atrasado"}: <strong className="text-lg">{fmtMoeda(total)}</strong>
-            {filtro === "abertas" && atrasado > 0 && <span className="ml-2 font-semibold text-critico-600">· atrasado {fmtMoeda(atrasado)}</span>}
+            {filtro === "abertas" ? "Em aberto" : "Atrasado"}: <strong className="text-lg">{moeda(total)}</strong>
+            {filtro === "abertas" && atrasado > 0 && <span className="ml-2 font-semibold text-critico-600">· atrasado {moeda(atrasado)}</span>}
           </p>
         )}
       </div>
@@ -467,7 +472,7 @@ function ListaCrediario() {
                         </span>}
                         {p.status === "paga" && <span className="block text-xs text-ok-700">paga {fmtDataHora(p.pago_em)} · {p.pago_forma && NOME_FORMA[p.pago_forma]}</span>}
                       </td>
-                      <td className="text-right font-semibold">{fmtMoeda(p.valor)}</td>
+                      <td className="text-right font-semibold">{moeda(p.valor)}</td>
                       <td className="nao-imprimir whitespace-nowrap text-right">
                         <div className="flex justify-end gap-1">
                           <button className="btn-secundario btn-pequeno" onClick={() => abrirCarne(p)}>Carnê</button>
@@ -492,7 +497,7 @@ function ListaCrediario() {
           onConfirmar={async (forma) => {
             const { error } = await supabase.rpc("receber_parcela", { p_parcela_id: recebendo.id, p_forma: forma });
             if (error) return mensagemErro(error);
-            avisar("sucesso", `Parcela ${recebendo.numero}/${recebendo.total_parcelas} de ${recebendo.clientes?.nome} recebida (${fmtMoeda(recebendo.valor)}).`);
+            avisar("sucesso", `Parcela ${recebendo.numero}/${recebendo.total_parcelas} de ${recebendo.clientes?.nome} recebida (${moeda(recebendo.valor)}).`);
             setRecebendo(null);
             void carregar();
             return null;
@@ -512,6 +517,7 @@ function ListaCrediario() {
 /* ------------------------------ Clientes ------------------------------ */
 
 function ListaClientes() {
+  const moeda = useMoeda();
   const { config, ehAdmin, valoresOcultos } = useAuth();
   const avisar = useToast();
   const [clientes, setClientes] = useState<Cliente[] | null>(null);
@@ -568,8 +574,8 @@ function ListaClientes() {
                       <td><span className="font-medium">{c.nome}</span>{!c.ativo && <Selo>Inativo</Selo>}{c.endereco && <span className="block text-xs text-slate-400">{c.endereco}</span>}</td>
                       <td className="whitespace-nowrap">{c.telefone ?? "—"}</td>
                       <td className="whitespace-nowrap">{c.cpf ?? "—"}</td>
-                      <td className="text-right">{c.limite_credito === null ? <span className="text-xs text-slate-400">sem limite</span> : fmtMoeda(c.limite_credito)}</td>
-                      <td className={`text-right font-semibold ${passou ? "text-critico-600" : ""}`}>{valoresOcultos ? "—" : fmtMoeda(aberto)}</td>
+                      <td className="text-right">{c.limite_credito === null ? <span className="text-xs text-slate-400">sem limite</span> : moeda(c.limite_credito)}</td>
+                      <td className={`text-right font-semibold ${passou ? "text-critico-600" : ""}`}>{valoresOcultos ? "—" : moeda(aberto)}</td>
                       <td className="nao-imprimir whitespace-nowrap text-right">
                         <div className="flex justify-end gap-1">
                           <button className="btn-secundario btn-pequeno" onClick={() => verExtrato(c)}>Extrato</button>
@@ -602,7 +608,7 @@ function ListaClientes() {
                 valor: Number(p.valor),
               }))}
               total={extrato.parcelas.reduce((s, p) => s + Number(p.valor), 0)}
-              rodape={extrato.c.limite_credito !== null ? `Limite de crédito: ${fmtMoeda(extrato.c.limite_credito)}` : undefined}
+              rodape={extrato.c.limite_credito !== null ? `Limite de crédito: ${moeda(extrato.c.limite_credito)}` : undefined}
             />
           )}
         </JanelaComprovante>
@@ -690,6 +696,7 @@ function JanelaCliente({ cliente, ehAdmin, onFechar, onSalvo }: { cliente: Clien
 /* ------------------------------ Caixas ------------------------------ */
 
 function ListaCaixas() {
+  const moeda = useMoeda();
   const { config, ehAdmin, valoresOcultos } = useAuth();
   const avisar = useToast();
   const [caixas, setCaixas] = useState<Caixa[] | null>(null);
@@ -734,11 +741,11 @@ function ListaCaixas() {
                     <td>{c.usuario_nome}</td>
                     <td className="whitespace-nowrap text-xs">{fmtDataHora(c.aberto_em)}</td>
                     <td className="whitespace-nowrap text-xs">{c.status === "aberto" ? <Selo cor="ok">Aberto</Selo> : fmtDataHora(c.fechado_em)}</td>
-                    {colunasValores && <td className="text-right">{c.valor_esperado !== null ? fmtMoeda(c.valor_esperado) : "—"}</td>}
-                    <td className="text-right">{c.valor_contado !== null ? fmtMoeda(c.valor_contado) : "—"}</td>
+                    {colunasValores && <td className="text-right">{c.valor_esperado !== null ? moeda(c.valor_esperado) : "—"}</td>}
+                    <td className="text-right">{c.valor_contado !== null ? moeda(c.valor_contado) : "—"}</td>
                     {colunasValores && (
                       <td className={`text-right font-semibold ${c.diferenca === null || Number(c.diferenca) === 0 ? "" : Number(c.diferenca) > 0 ? "text-petroleo-700" : "text-critico-600"}`}>
-                        {c.diferenca === null ? "—" : Number(c.diferenca) === 0 ? "OK" : fmtMoeda(c.diferenca)}
+                        {c.diferenca === null ? "—" : Number(c.diferenca) === 0 ? "OK" : moeda(c.diferenca)}
                       </td>
                     )}
                     <td className="nao-imprimir text-right"><button className="btn-secundario btn-pequeno" onClick={() => ver(c)}>Ver / imprimir</button></td>
