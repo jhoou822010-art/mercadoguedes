@@ -9,6 +9,7 @@ import { ProdutoBusca } from "../components/ProdutoBusca";
 import { CupomFechamento, CupomVenda, JanelaComprovante } from "../components/Comprovante";
 import { Aviso, Cabecalho, Carregando } from "../components/Ui";
 import { ativarCalculadora, Calculadora } from "../components/Calculadora";
+import { abrirCaixaEmJanela, chaveCarrinho, ehJanelaDoCaixa, gravarCarrinho, lerCarrinhoGuardado } from "../lib/carrinho";
 import { ClienteSeletor } from "../components/ClienteSeletor";
 import { COLUNAS_CAIXA, selecaoVenda } from "../lib/consultas";
 import { pixDaLoja } from "../lib/pix";
@@ -94,14 +95,9 @@ function produtoAvulso(descricao: string, preco: number): ProdutoView {
 }
 type Desconto = { tipo: "valor" | "percentual"; valor: string };
 
-function chaveCarrinho(caixaId: number) { return `lojafacil.carrinho.${caixaId}`; }
-
 function lerCarrinho(caixaId: number): { itens: ItemCarrinho[]; desconto: Desconto } {
-  try {
-    const t = sessionStorage.getItem(chaveCarrinho(caixaId));
-    if (t) return JSON.parse(t);
-  } catch { /* ignora */ }
-  return { itens: [], desconto: { tipo: "valor", valor: "" } };
+  const c = lerCarrinhoGuardado<ItemCarrinho, Desconto>(caixaId);
+  return { itens: c?.itens ?? [], desconto: c?.desconto ?? { tipo: "valor", valor: "" } };
 }
 
 const INTEIRAS = ["UN", "PCT", "CX"];
@@ -119,10 +115,23 @@ function PontoDeVenda({ caixa, onFechado }: { caixa: TCaixa; onFechado: () => vo
   const busca = useRef<HTMLInputElement>(null);
   const qtdRefs = useRef<Record<number, HTMLInputElement | null>>({});
 
-  // Guarda o carrinho nesta aba, para não perder a compra se a página recarregar.
+  // Guarda a compra no navegador: trocar de menu, recarregar ou faltar energia não perde nada.
+  const { perfil } = useAuth();
   useEffect(() => {
-    try { sessionStorage.setItem(chaveCarrinho(caixa.id), JSON.stringify({ itens, desconto })); } catch { /* ignora */ }
-  }, [itens, desconto, caixa.id]);
+    gravarCarrinho(caixa.id, { itens, desconto, usuario_id: perfil?.id });
+  }, [itens, desconto, caixa.id, perfil?.id]);
+  // Caixa aberto em duas janelas (principal e separada): as duas mostram a mesma compra.
+  useEffect(() => {
+    const k = chaveCarrinho(caixa.id);
+    const ouvir = (e: StorageEvent) => {
+      if (e.key !== k) return;
+      const c = lerCarrinho(caixa.id);
+      setItens(c.itens);
+      setDesconto(c.desconto);
+    };
+    window.addEventListener("storage", ouvir);
+    return () => window.removeEventListener("storage", ouvir);
+  }, [caixa.id]);
 
   const focarBusca = () => setTimeout(() => busca.current?.focus(), 50);
 
@@ -259,6 +268,9 @@ function PontoDeVenda({ caixa, onFechado }: { caixa: TCaixa; onFechado: () => vo
           <p className="text-sm text-slate-500">Aberto em {fmtDataHora(caixa.aberto_em)} · {caixa.usuario_nome}</p>
         </div>
         <div className="flex flex-wrap gap-2">
+          {!ehJanelaDoCaixa() && (
+            <button className="btn-secundario btn-pequeno" onClick={() => { if (!abrirCaixaEmJanela()) avisar("erro", "O navegador bloqueou a janela. Permita janelas pop-up para este site."); }} title="Abre o caixa numa janela própria, que pode ser movida e mudar de tamanho. A compra continua a mesma.">⧉ Janela separada</button>
+          )}
           <button className="btn-secundario btn-pequeno" onClick={() => setJanela("atalhos")}>⌨ Atalhos{rotulo(teclas, "ajuda_atalhos")}</button>
           <button className="btn-secundario btn-pequeno" onClick={() => setJanela("suprimento")}>+ Suprimento{rotulo(teclas, "suprimento")}</button>
           <button className="btn-secundario btn-pequeno" onClick={() => setJanela("sangria")}>− Sangria{rotulo(teclas, "sangria")}</button>
@@ -268,9 +280,9 @@ function PontoDeVenda({ caixa, onFechado }: { caixa: TCaixa; onFechado: () => vo
         </div>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-3">
+      <div className="grid gap-4 md:grid-cols-3">
         {/* Itens */}
-        <section className="cartao flex min-h-[24rem] flex-col lg:col-span-2">
+        <section className="cartao flex min-h-[12rem] flex-col md:col-span-2 md:min-h-[24rem]">
           <div className="border-b border-slate-100 p-4">
             <ProdutoBusca onSelecionar={adicionar} autoFocus campoRef={busca} placeholder="Passe o leitor ou digite nome / código" />
           </div>
@@ -320,7 +332,7 @@ function PontoDeVenda({ caixa, onFechado }: { caixa: TCaixa; onFechado: () => vo
         </section>
 
         {/* Totais */}
-        <aside className="cartao flex flex-col gap-3 p-5 lg:sticky lg:top-6 lg:self-start">
+        <aside className="cartao flex flex-col gap-3 p-5 md:sticky md:top-6 md:self-start">
           <div className="flex justify-between text-sm"><span className="text-slate-500">Itens</span><span>{itens.length}</span></div>
           <div className="flex justify-between text-sm"><span className="text-slate-500">Subtotal</span><span>{fmtMoeda(subtotal)}</span></div>
           <div className="flex items-center justify-between text-sm">
