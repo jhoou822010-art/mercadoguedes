@@ -8,7 +8,7 @@ import { Confirmar, Modal } from "../components/Modal";
 import { ProdutoBusca } from "../components/ProdutoBusca";
 import { CupomFechamento, CupomVenda, JanelaComprovante } from "../components/Comprovante";
 import { Aviso, Cabecalho, Carregando } from "../components/Ui";
-import { Calculadora } from "../components/Calculadora";
+import { ativarCalculadora, Calculadora } from "../components/Calculadora";
 import { ClienteSeletor } from "../components/ClienteSeletor";
 import { COLUNAS_CAIXA, selecaoVenda } from "../lib/consultas";
 import { pixDaLoja } from "../lib/pix";
@@ -113,6 +113,7 @@ function PontoDeVenda({ caixa, onFechado }: { caixa: TCaixa; onFechado: () => vo
   const [itens, setItens] = useState<ItemCarrinho[]>(inicial.itens);
   const [desconto, setDesconto] = useState<Desconto>(inicial.desconto);
   const [janela, setJanela] = useState<"" | "pagamento" | "desconto" | "limpar" | "sangria" | "suprimento" | "fechar" | "calculadora" | "atalhos" | "avulso">("");
+  const [calcAberta, setCalcAberta] = useState(false);
   const teclas = useMemo(() => mapaAtalhos(config?.atalhos), [config?.atalhos]);
   const [comprovante, setComprovante] = useState<VendaCompleta | null>(null);
   const busca = useRef<HTMLInputElement>(null);
@@ -214,7 +215,7 @@ function PontoDeVenda({ caixa, onFechado }: { caixa: TCaixa; onFechado: () => vo
     pagamento: () => void abrirPagamento(),
     buscar_produto: focarBusca,
     desconto: () => itens.length && setJanela("desconto"),
-    calculadora: () => setJanela("calculadora"),
+    calculadora: () => (calcAberta ? ativarCalculadora() : setCalcAberta(true)),
     item_avulso: () => abrirAvulso(),
     cancelar_compra: () => itens.length && setJanela("limpar"),
     quantidade_ultimo: () => {
@@ -340,7 +341,7 @@ function PontoDeVenda({ caixa, onFechado }: { caixa: TCaixa; onFechado: () => vo
                 ✚ Digite o produto{rotulo(teclas, "item_avulso")}
               </button>
             )}
-            <button className="btn-secundario btn-pequeno" onClick={() => setJanela("calculadora")}>🧮 Calculadora{rotulo(teclas, "calculadora")}</button>
+            <button className="btn-secundario btn-pequeno" onClick={() => (calcAberta ? ativarCalculadora() : setCalcAberta(true))}>🧮 Calculadora{rotulo(teclas, "calculadora")}</button>
             <button className="btn-secundario btn-pequeno" disabled={!itens.length} onClick={() => setJanela("limpar")}>Cancelar compra{rotulo(teclas, "cancelar_compra")}</button>
             <button className="btn-secundario btn-pequeno" disabled={!itens.length} onClick={() => mudarUltimo(1)}>+1 no último{rotulo(teclas, "mais_um")}</button>
             <button className="btn-secundario btn-pequeno" disabled={!itens.length} onClick={() => mudarUltimo(-1)}>−1 no último{rotulo(teclas, "menos_um")}</button>
@@ -386,7 +387,7 @@ function PontoDeVenda({ caixa, onFechado }: { caixa: TCaixa; onFechado: () => vo
         <JanelaSangria tipo={janela} onFechar={() => { setJanela(""); focarBusca(); }} />
       )}
 
-      {janela === "calculadora" && <Calculadora onFechar={() => { setJanela(""); focarBusca(); }} />}
+      {calcAberta && <Calculadora onFechar={() => { setCalcAberta(false); if (!janela) focarBusca(); }} />}
       {janela === "avulso" && <JanelaAvulso onAdicionar={adicionarAvulso} onFechar={() => { setJanela(""); focarBusca(); }} />}
       {janela === "atalhos" && <JanelaAtalhos teclas={teclas} onFechar={() => { setJanela(""); focarBusca(); }} />}
 
@@ -518,8 +519,8 @@ function JanelaPagamento({ teclas, total, itens, desconto, onConcluida, onFechar
   useAtalhos(teclas, {
     ...Object.fromEntries(FORMAS.map((f) => [`pag_${f}`, () => escolherForma(f)])),
     pag_exato: () => { setValor(falta > 0 ? String(falta).replace(".", ",") : ""); setTimeout(() => campoValor.current?.select(), 30); },
-    pag_calculadora: () => setCalc(true),
-  }, !calc && !enviando);
+    pag_calculadora: () => (calc ? ativarCalculadora() : setCalc(true)),
+  }, !enviando);
 
   function validarNovo(f: FormaPagamento, v: number): string {
     if (Number.isNaN(v) || v <= 0) return "Digite um valor maior que zero.";
@@ -618,7 +619,7 @@ function JanelaPagamento({ teclas, total, itens, desconto, onConcluida, onFechar
               <label className="rotulo" htmlFor="valor-pag">Valor em {NOME_FORMA[forma].toLowerCase()} {forma === "dinheiro" && "(valor recebido do cliente)"}</label>
               <div className="flex gap-2">
                 <input id="valor-pag" ref={campoValor} className="campo text-2xl font-bold" inputMode="decimal" value={valor} onChange={(e) => { setValor(e.target.value); setErro(""); }} autoFocus onFocus={(e) => e.target.select()} />
-                <button type="button" className="btn-secundario shrink-0" onClick={() => setCalc(true)} title={`Calculadora${rotulo(teclas, "pag_calculadora")}`}>🧮</button>
+                <button type="button" className="btn-secundario shrink-0" onClick={() => (calc ? ativarCalculadora() : setCalc(true))} title={`Calculadora${rotulo(teclas, "pag_calculadora")}`}>🧮</button>
               </div>
               {forma === "dinheiro" && (
                 <div className="mt-2 flex flex-wrap gap-2">
@@ -986,7 +987,7 @@ function JanelaAvulso({ onAdicionar, onFechar }: { onAdicionar: (descricao: stri
             <label className="rotulo" htmlFor="av-preco">Preço unitário (R$)</label>
             <div className="flex gap-1">
               <input id="av-preco" ref={campoPreco} className="campo min-w-0 text-lg font-bold" inputMode="decimal" value={preco} onChange={(e) => { setPreco(e.target.value); setErro(""); }} placeholder="0,00" />
-              <button type="button" className="btn-secundario shrink-0 px-3" title="Calculadora" onClick={() => setCalc(true)}>🧮</button>
+              <button type="button" className="btn-secundario shrink-0 px-3" title="Calculadora" onClick={() => (calc ? ativarCalculadora() : setCalc(true))}>🧮</button>
             </div>
           </div>
           <div>

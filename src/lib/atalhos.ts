@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { teclaEhDaCalculadora } from "../components/Calculadora";
 
 /* =====================================================================
    Atalhos de teclado do caixa (configuráveis pelo administrador).
@@ -137,6 +138,7 @@ export function useAtalhos(mapa: MapaAtalhos, acoes: Record<string, () => void>,
     if (!ativo) return;
     const ouvir = (e: KeyboardEvent) => {
       if (e.repeat) return;
+      if (teclaEhDaCalculadora(e)) return;
       const combo = comboDoEvento(e);
       if (!combo) return;
       const id = Object.keys(ref.current).find((k) => mapa[k] === combo);
