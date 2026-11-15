@@ -42,13 +42,14 @@ Descompacte o arquivo `loja-facil.zip` numa pasta, por exemplo `C:\projetos\loja
 
 ### 2.2 Criar as tabelas
 
-São **3 arquivos**, rodados **nesta ordem**, cada um **uma vez só**:
+São **4 arquivos**, rodados **nesta ordem**, cada um **uma vez só**:
 
 | Ordem | Arquivo | O que cria |
 |---|---|---|
 | 1º | `supabase/migrations/0001_inicial.sql` | usuários, produtos, estoque, validade |
 | 2º | `supabase/migrations/0002_caixa_vendas.sql` | caixa, vendas, pagamentos, fiado, comprovante |
 | 3º | `supabase/migrations/0003_atalhos_teclado.sql` | teclas de atalho do caixa |
+| 4º | `supabase/migrations/0004_logo_loja.sql` | logo da loja |
 
 Para cada arquivo:
 
@@ -63,7 +64,7 @@ Para cada arquivo:
 Todas devem mostrar o selo de **RLS ativado** (cadeado).
 
 > ⚠️ Se rodar um arquivo de novo, vai dar erro de "already exists". Isso não estraga nada, mas também não é necessário.
-> Se rodar fora de ordem, dá erro: rode o 0001, depois o 0002, depois o 0003.
+> Se rodar fora de ordem, dá erro: rode o 0001, depois o 0002, depois o 0003, depois o 0004.
 
 ### 2.3 Configurar o login
 
@@ -318,5 +319,5 @@ Rode só as que faltam, em ordem (ex.: já rodou 0001 e 0002 → rode só o `000
 ## Mudanças futuras no banco
 
 Nunca altere o `0001_inicial.sql` depois de rodado.
-Cada mudança nova vira um arquivo novo: `0004_descricao.sql`, `0005_...`, rodado uma vez no SQL Editor.
+Cada mudança nova vira um arquivo novo: `0005_descricao.sql`, `0006_...`, rodado uma vez no SQL Editor.
 **Faça um backup antes** de rodar qualquer migração.

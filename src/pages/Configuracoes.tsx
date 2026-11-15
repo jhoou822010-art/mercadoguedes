@@ -4,10 +4,11 @@ import { cnpjValido, fmtDataHora, lerNumero, mascaraCnpj } from "../lib/format";
 import type { Configuracoes as TConfig, Papel, Perfil, VendaCompleta } from "../lib/types";
 import { CupomVenda, JanelaComprovante } from "../components/Comprovante";
 import { larguraCupom, salvarLarguraCupom } from "../lib/imprimir";
+import { reduzirImagem } from "../lib/imagem";
 import { useAuth } from "../contexts/AuthContext";
 import { useToast } from "../components/Toast";
 import { Confirmar } from "../components/Modal";
-import { Cabecalho, Carregando, Selo } from "../components/Ui";
+import { Aviso, Cabecalho, Carregando, Selo } from "../components/Ui";
 
 /** Venda fictícia usada só para mostrar a prévia do comprovante. */
 const VENDA_EXEMPLO: VendaCompleta = {
@@ -38,6 +39,11 @@ export default function Configuracoes() {
   const [telefone, setTelefone] = useState("");
   const [mensagem, setMensagem] = useState("");
   const [descMax, setDescMax] = useState("100");
+  const [logo, setLogo] = useState<string | null>(null);
+  const [logoNoComprovante, setLogoNoComprovante] = useState(true);
+  const [processandoLogo, setProcessandoLogo] = useState(false);
+  // A coluna "logo" só existe depois de rodar o SQL 0004.
+  const semColunaLogo = config !== null && config.logo === undefined;
 
   useEffect(() => {
     if (!config) return;
@@ -49,7 +55,22 @@ export default function Configuracoes() {
     setTelefone(config.telefone ?? "");
     setMensagem(config.mensagem_comprovante ?? "");
     setDescMax(String(config.desconto_maximo_percentual ?? 100).replace(".", ","));
+    setLogo(config.logo ?? null);
+    setLogoNoComprovante(config.logo_no_comprovante ?? true);
   }, [config]);
+
+  async function escolherLogo(arquivo: File | undefined) {
+    if (!arquivo) return;
+    setProcessandoLogo(true);
+    try {
+      setLogo(await reduzirImagem(arquivo));
+      avisar("info", "Logo carregada. Confira a prévia e clique em “Salvar”.");
+    } catch (e) {
+      avisar("erro", e instanceof Error ? e.message : String(e));
+    } finally {
+      setProcessandoLogo(false);
+    }
+  }
 
   const carregar = useCallback(async () => {
     const { data, error } = await supabase.from("perfis").select("*").order("criado_em");
@@ -88,6 +109,7 @@ export default function Configuracoes() {
       telefone: telefone.trim() || null,
       mensagem_comprovante: mensagem.trim(),
       desconto_maximo_percentual: desc,
+      ...(semColunaLogo ? {} : { logo, logo_no_comprovante: logoNoComprovante }),
       atualizado_em: new Date().toISOString(),
     }).eq("id", 1);
     setSalvando(false);
@@ -108,12 +130,15 @@ export default function Configuracoes() {
     telefone: telefone.trim() || null,
     mensagem_comprovante: mensagem.trim(),
     desconto_maximo_percentual: 100,
-  }), [nomeLoja, diasAlerta, cnpj, mostrarCnpj, endereco, telefone, mensagem]);
+    logo,
+    logo_no_comprovante: logoNoComprovante,
+  }), [nomeLoja, diasAlerta, cnpj, mostrarCnpj, endereco, telefone, mensagem, logo, logoNoComprovante]);
   const [largura, setLargura] = useState<"80" | "58">(larguraCupom());
   const [teste, setTeste] = useState(false);
   const alterado = Boolean(config) && (
     nomeLoja !== config!.nome_loja || cnpj !== (config!.cnpj ?? "") || mostrarCnpj !== config!.mostrar_cnpj ||
-    endereco !== (config!.endereco ?? "") || telefone !== (config!.telefone ?? "") || mensagem !== (config!.mensagem_comprovante ?? ""));
+    endereco !== (config!.endereco ?? "") || telefone !== (config!.telefone ?? "") || mensagem !== (config!.mensagem_comprovante ?? "") ||
+    (!semColunaLogo && (logo !== (config!.logo ?? null) || logoNoComprovante !== (config!.logo_no_comprovante ?? true))));
 
   const pendentes = usuarios?.filter((u) => u.papel === "pendente").length ?? 0;
 
@@ -127,7 +152,30 @@ export default function Configuracoes() {
           <div>
             <label className="rotulo" htmlFor="nl">Nome da loja</label>
             <input id="nl" className="campo" value={nomeLoja} onChange={(e) => setNomeLoja(e.target.value)} maxLength={80} />
-            <p className="mt-1 text-xs text-slate-400">Aparece nas etiquetas e relatórios.</p>
+            <p className="mt-1 text-xs text-slate-400">Aparece no topo do menu, na aba do navegador, nas etiquetas, nos relatórios e no comprovante.</p>
+          </div>
+          <div>
+            <span className="rotulo">Logo da loja</span>
+            {semColunaLogo ? (
+              <Aviso cor="atencao">
+                Para enviar a logo, rode antes o arquivo <code>supabase/migrations/0004_logo_loja.sql</code> no SQL Editor do Supabase e recarregue a página.
+              </Aviso>
+            ) : (
+              <div className="flex items-center gap-4">
+                <div className="flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-dashed border-slate-300 bg-slate-50">
+                  {logo ? <img src={logo} alt="Logo da loja" className="h-full w-full object-contain p-1" /> : <span className="text-center text-[11px] text-slate-400">sem logo</span>}
+                </div>
+                <div className="space-y-2">
+                  <label className="btn-secundario btn-pequeno cursor-pointer">
+                    {processandoLogo ? "Processando…" : logo ? "Trocar logo" : "Enviar logo"}
+                    <input type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" className="sr-only" disabled={processandoLogo}
+                      onChange={(e) => { void escolherLogo(e.target.files?.[0]); e.target.value = ""; }} />
+                  </label>
+                  {logo && <button type="button" className="ml-2 text-xs font-semibold text-critico-600 hover:underline" onClick={() => setLogo(null)}>Remover</button>}
+                  <p className="text-xs text-slate-400">PNG, JPG ou WEBP. Fundo transparente fica melhor. O sistema reduz o tamanho sozinho.</p>
+                </div>
+              </div>
+            )}
           </div>
           <div>
             <label className="rotulo" htmlFor="da">Avisar validade com quantos dias de antecedência?</label>
@@ -143,6 +191,12 @@ export default function Configuracoes() {
             <input type="checkbox" className="h-4 w-4 accent-petroleo-700" checked={mostrarCnpj} onChange={(e) => setMostrarCnpj(e.target.checked)} />
             Mostrar o CNPJ no comprovante
           </label>
+          {!semColunaLogo && (
+            <label className="flex items-center gap-2 text-sm">
+              <input type="checkbox" className="h-4 w-4 accent-petroleo-700" checked={logoNoComprovante} onChange={(e) => setLogoNoComprovante(e.target.checked)} disabled={!logo} />
+              Mostrar a logo no comprovante (sai em preto e branco)
+            </label>
+          )}
           <div>
             <label className="rotulo" htmlFor="end">Endereço</label>
             <input id="end" className="campo" value={endereco} onChange={(e) => setEndereco(e.target.value)} maxLength={120} placeholder="Rua, número, bairro, cidade" />

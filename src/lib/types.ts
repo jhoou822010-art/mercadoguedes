@@ -70,6 +70,9 @@ export interface Configuracoes {
   desconto_maximo_percentual: number;
   /** Teclas de atalho do caixa (migração 0003). */
   atalhos?: Record<string, string> | null;
+  /** Logo da loja como data URL (migração 0004). */
+  logo?: string | null;
+  logo_no_comprovante?: boolean;
 }
 
 export interface ResumoPainel {

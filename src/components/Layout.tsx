@@ -18,13 +18,20 @@ const ITENS: Item[] = [
   { para: "/teclado", rotulo: "Teclado do caixa", icone: "⌨", admin: true },
 ];
 
-export function Logo({ claro = false }: { claro?: boolean }) {
+export function Logo({ claro = false, loja }: { claro?: boolean; loja?: { nome: string; logo?: string | null } | null }) {
+  const nome = loja?.nome?.trim();
   return (
-    <div className="flex items-center gap-2.5">
-      <img src={`${import.meta.env.BASE_URL}favicon.svg`} alt="" className="h-9 w-9" />
-      <div className="leading-tight">
-        <div className={`text-lg font-bold ${claro ? "text-white" : "text-petroleo-800"}`}>Loja Fácil</div>
-        <div className={`text-[11px] ${claro ? "text-petroleo-200" : "text-slate-500"}`}>Controle de loja sem complicação</div>
+    <div className="flex min-w-0 items-center gap-2.5">
+      {loja?.logo ? (
+        <img src={loja.logo} alt={nome ? `Logo ${nome}` : "Logo"} className="h-10 w-10 shrink-0 rounded-lg bg-white object-contain p-0.5" />
+      ) : (
+        <img src={`${import.meta.env.BASE_URL}favicon.svg`} alt="" className="h-9 w-9 shrink-0" />
+      )}
+      <div className="min-w-0 leading-tight">
+        <div className={`truncate text-lg font-bold ${claro ? "text-white" : "text-petroleo-800"}`}>{nome || "Loja Fácil"}</div>
+        <div className={`truncate text-[11px] ${claro ? "text-petroleo-200" : "text-slate-500"}`}>
+          {nome ? "Loja Fácil · controle de loja" : "Controle de loja sem complicação"}
+        </div>
       </div>
     </div>
   );
@@ -55,11 +62,10 @@ function Menu({ onNavegar }: { onNavegar?: () => void }) {
 }
 
 function Usuario() {
-  const { perfil, config, sair } = useAuth();
+  const { perfil, sair } = useAuth();
   const [editando, setEditando] = useState(false);
   return (
     <div className="border-t border-white/10 pt-4 text-sm">
-      {config && <p className="mb-2 truncate text-xs text-petroleo-200">{config.nome_loja}</p>}
       <button onClick={() => setEditando(true)} className="group mb-3 block w-full rounded-lg px-2 py-1 text-left hover:bg-white/10" title="Editar meu nome e senha">
         <span className="block truncate font-medium text-white">{perfil?.nome}</span>
         <span className="block text-xs text-petroleo-200">{perfil?.papel === "admin" ? "Administrador" : "Operador"} · <span className="underline group-hover:text-white">Meu perfil</span></span>
@@ -75,14 +81,19 @@ function Usuario() {
 export function Layout() {
   const [menuAberto, setMenuAberto] = useState(false);
   const local = useLocation();
+  const { config } = useAuth();
+  const loja = config ? { nome: config.nome_loja, logo: config.logo } : null;
   useEffect(() => setMenuAberto(false), [local.pathname]);
+  useEffect(() => {
+    document.title = config?.nome_loja ? `${config.nome_loja} · Loja Fácil` : "Loja Fácil";
+  }, [config?.nome_loja]);
 
   return (
     <div className="min-h-screen lg:flex">
       {/* Barra lateral (computador) */}
       <aside className="nao-imprimir hidden w-64 shrink-0 flex-col justify-between bg-petroleo-800 p-4 lg:sticky lg:top-0 lg:flex lg:h-screen">
         <div className="space-y-6">
-          <Logo claro />
+          <Logo claro loja={loja} />
           <Menu />
         </div>
         <Usuario />
@@ -90,7 +101,7 @@ export function Layout() {
 
       {/* Barra superior (celular/tablet) */}
       <header className="nao-imprimir sticky top-0 z-20 flex items-center justify-between bg-petroleo-800 px-4 py-3 lg:hidden">
-        <Logo claro />
+        <Logo claro loja={loja} />
         <button onClick={() => setMenuAberto(true)} className="rounded-lg p-2 text-2xl leading-none text-white hover:bg-white/10" aria-label="Abrir menu">
           ☰
         </button>
@@ -100,7 +111,7 @@ export function Layout() {
           <div className="flex h-full w-72 max-w-[85vw] flex-col justify-between bg-petroleo-800 p-4" onClick={(e) => e.stopPropagation()}>
             <div className="space-y-6">
               <div className="flex items-start justify-between">
-                <Logo claro />
+                <Logo claro loja={loja} />
                 <button onClick={() => setMenuAberto(false)} className="p-1 text-white" aria-label="Fechar menu">✕</button>
               </div>
               <Menu onNavegar={() => setMenuAberto(false)} />

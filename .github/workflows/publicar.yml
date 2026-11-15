@@ -11,6 +11,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
   pages: write
   id-token: write
 
@@ -68,6 +69,26 @@ jobs:
           VITE_BASE: /${{ github.event.repository.name }}/
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL || vars.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY || vars.VITE_SUPABASE_ANON_KEY }}
+
+      - name: Evitar que a publicação antiga do GitHub deixe o site em branco
+        # Se Settings → Pages → Source ainda estiver em "Deploy from a branch", o GitHub publica
+        # também os arquivos-fonte ao mesmo tempo (página em branco). Aqui esperamos essa
+        # publicação terminar, para que a nossa (o site pronto) seja sempre a última.
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          tipo=$(gh api "repos/$REPO/pages" --jq .build_type 2>/dev/null || echo "")
+          echo "Tipo de publicação do GitHub Pages: ${tipo:-desconhecido}"
+          if [ "$tipo" != "workflow" ]; then
+            echo "::warning::Settings → Pages → Source não está em 'GitHub Actions'. Troque para 'GitHub Actions' para a publicação ficar mais rápida. Esperando a publicação automática do GitHub terminar…"
+            for i in $(seq 1 30); do
+              sleep 10
+              pendentes=$(gh api "repos/$REPO/actions/runs?per_page=20" --jq '[.workflow_runs[] | select(.name=="pages build and deployment" and .status!="completed")] | length' 2>/dev/null || echo 0)
+              echo "Publicações automáticas em andamento: $pendentes"
+              if [ "$i" -ge 3 ] && [ "$pendentes" = "0" ]; then break; fi
+            done
+          fi
 
       - name: Preparar o GitHub Pages
         uses: actions/configure-pages@v5

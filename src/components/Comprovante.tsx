@@ -8,6 +8,9 @@ import { Modal } from "./Modal";
 function CabecalhoLoja({ config }: { config: Configuracoes | null }) {
   return (
     <div className="centro">
+      {config?.logo && config.logo_no_comprovante !== false && (
+        <img src={config.logo} alt="" style={{ display: "block", margin: "0 auto 4px", maxHeight: "18mm", maxWidth: "60%", objectFit: "contain", filter: "grayscale(1)" }} />
+      )}
       <div style={{ fontWeight: 700, fontSize: "1.15em" }}>{config?.nome_loja ?? "Loja"}</div>
       {config?.mostrar_cnpj && config.cnpj && <div>CNPJ: {config.cnpj}</div>}
       {config?.endereco && <div>{config.endereco}</div>}
