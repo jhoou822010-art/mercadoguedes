@@ -6,6 +6,8 @@ import { CupomVenda, JanelaComprovante } from "../components/Comprovante";
 import { larguraCupom, salvarLarguraCupom } from "../lib/imprimir";
 import { reduzirImagem } from "../lib/imagem";
 import { LOGO_PADRAO } from "../lib/marca";
+import { montarPix, normalizarChave, NOME_TIPO_CHAVE, type TipoChavePix } from "../lib/pix";
+import { PixNaTela } from "../components/QrPix";
 import { useAuth } from "../contexts/AuthContext";
 import { useToast } from "../components/Toast";
 import { Confirmar } from "../components/Modal";
@@ -45,6 +47,13 @@ export default function Configuracoes() {
   const [processandoLogo, setProcessandoLogo] = useState(false);
   const [permitirAvulso, setPermitirAvulso] = useState(true);
   const [ocultarValores, setOcultarValores] = useState(false);
+  const [pixTipo, setPixTipo] = useState<TipoChavePix>("cnpj");
+  const [pixChave, setPixChave] = useState("");
+  const [pixNome, setPixNome] = useState("");
+  const [pixCidade, setPixCidade] = useState("");
+  const [pixBanco, setPixBanco] = useState("");
+  const [pixNoComprovante, setPixNoComprovante] = useState(true);
+  const [pixTeste, setPixTeste] = useState("1,00");
   const sem0006 = config !== null && config.ocultar_valores_operador === undefined;
   const semColunaAvulso = config !== null && config.permitir_item_avulso === undefined;
   // A coluna "logo" só existe depois de rodar o SQL 0004.
@@ -64,6 +73,12 @@ export default function Configuracoes() {
     setLogoNoComprovante(config.logo_no_comprovante ?? true);
     setPermitirAvulso(config.permitir_item_avulso ?? true);
     setOcultarValores(config.ocultar_valores_operador ?? false);
+    setPixTipo((config.pix_tipo as TipoChavePix) || "cnpj");
+    setPixChave(config.pix_chave ?? "");
+    setPixNome(config.pix_nome ?? config.nome_loja ?? "");
+    setPixCidade(config.pix_cidade ?? "");
+    setPixBanco(config.pix_banco ?? "");
+    setPixNoComprovante(config.pix_no_comprovante ?? true);
   }, [config]);
 
   async function escolherLogo(arquivo: File | undefined) {
@@ -104,6 +119,10 @@ export default function Configuracoes() {
     if (!nomeLoja.trim()) return avisar("erro", "Informe o nome da loja.");
     if (!Number.isInteger(dias) || dias < 1 || dias > 365) return avisar("erro", "Os dias de alerta devem ficar entre 1 e 365.");
     if (cnpj.trim() && !cnpjValido(cnpj)) return avisar("erro", "CNPJ inválido. Confira os números.");
+    if (!sem0006 && pixChave.trim()) {
+      if (!normalizarChave(pixTipo, pixChave)) return avisar("erro", `Chave Pix inválida para o tipo ${NOME_TIPO_CHAVE[pixTipo]}.`);
+      if (!pixNome.trim() || !pixCidade.trim()) return avisar("erro", "Para o Pix, preencha também o nome do recebedor e a cidade.");
+    }
     const desc = lerNumero(descMax);
     if (Number.isNaN(desc) || desc < 0 || desc > 100) return avisar("erro", "O desconto máximo deve ficar entre 0 e 100%.");
     setSalvando(true);
@@ -118,7 +137,15 @@ export default function Configuracoes() {
       desconto_maximo_percentual: desc,
       ...(semColunaLogo ? {} : { logo, logo_no_comprovante: logoNoComprovante }),
       ...(semColunaAvulso ? {} : { permitir_item_avulso: permitirAvulso }),
-      ...(sem0006 ? {} : { ocultar_valores_operador: ocultarValores }),
+      ...(sem0006 ? {} : {
+        ocultar_valores_operador: ocultarValores,
+        pix_tipo: pixChave.trim() ? pixTipo : null,
+        pix_chave: pixChave.trim() || null,
+        pix_nome: pixNome.trim() || null,
+        pix_cidade: pixCidade.trim() || null,
+        pix_banco: pixBanco.trim() || null,
+        pix_no_comprovante: pixNoComprovante,
+      }),
       atualizado_em: new Date().toISOString(),
     }).eq("id", 1);
     setSalvando(false);
@@ -220,6 +247,66 @@ export default function Configuracoes() {
             <label className="rotulo" htmlFor="msg">Mensagem no rodapé</label>
             <input id="msg" className="campo" value={mensagem} onChange={(e) => setMensagem(e.target.value)} maxLength={120} />
           </div>
+          <h3 className="border-t border-slate-100 pt-4 font-semibold">Pix para recebimento</h3>
+          {sem0006 ? (
+            <p className="text-xs text-slate-500">Rode o SQL <code>0006_crediario_clientes_ocultar.sql</code> no Supabase para configurar o Pix.</p>
+          ) : (
+            <div className="space-y-3">
+              <p className="text-xs text-slate-500">
+                O QR Code é gerado com a chave abaixo e o valor da compra. O dinheiro cai <strong>direto na conta do recebedor</strong>, sem taxa.
+                A balconista confere no app do banco antes de confirmar a venda.
+              </p>
+              <div className="grid grid-cols-3 gap-2">
+                <div>
+                  <label className="rotulo" htmlFor="pix-tipo">Tipo de chave</label>
+                  <select id="pix-tipo" className="campo" value={pixTipo} onChange={(e) => setPixTipo(e.target.value as TipoChavePix)}>
+                    {(Object.keys(NOME_TIPO_CHAVE) as TipoChavePix[]).map((t) => <option key={t} value={t}>{NOME_TIPO_CHAVE[t]}</option>)}
+                  </select>
+                </div>
+                <div className="col-span-2">
+                  <label className="rotulo" htmlFor="pix-chave">Chave Pix</label>
+                  <input id="pix-chave" className={`campo ${pixChave.trim() && !normalizarChave(pixTipo, pixChave) ? "campo-erro" : ""}`} value={pixChave} onChange={(e) => setPixChave(e.target.value)}
+                    placeholder={pixTipo === "telefone" ? "(11) 98888-7777" : pixTipo === "email" ? "pix@loja.com.br" : pixTipo === "cpf" ? "000.000.000-00" : pixTipo === "cnpj" ? "00.000.000/0000-00" : "chave aleatória"} />
+                  {pixChave.trim() && !normalizarChave(pixTipo, pixChave) && <p className="mt-1 text-xs text-critico-600">Chave inválida para {NOME_TIPO_CHAVE[pixTipo]}.</p>}
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="rotulo" htmlFor="pix-nome">Nome do recebedor</label>
+                  <input id="pix-nome" className="campo" value={pixNome} onChange={(e) => setPixNome(e.target.value)} maxLength={60} />
+                  <p className="mt-1 text-xs text-slate-400">Como está no banco (até 25 letras no QR).</p>
+                </div>
+                <div>
+                  <label className="rotulo" htmlFor="pix-cidade">Cidade</label>
+                  <input id="pix-cidade" className="campo" value={pixCidade} onChange={(e) => setPixCidade(e.target.value)} maxLength={40} />
+                </div>
+              </div>
+              <div>
+                <label className="rotulo" htmlFor="pix-banco">Banco / conta (opcional, só para controle)</label>
+                <input id="pix-banco" className="campo" value={pixBanco} onChange={(e) => setPixBanco(e.target.value)} maxLength={60} placeholder="Ex.: Banco do Brasil ag. 1234, Nubank, Sicredi…" />
+              </div>
+              <label className="flex items-center gap-2 text-sm">
+                <input type="checkbox" className="h-4 w-4 accent-petroleo-700" checked={pixNoComprovante} onChange={(e) => setPixNoComprovante(e.target.checked)} />
+                Imprimir o QR Pix no comprovante, extrato e carnê
+              </label>
+              {(() => {
+                const chave = normalizarChave(pixTipo, pixChave);
+                if (!chave || !pixNome.trim() || !pixCidade.trim()) return <p className="text-xs text-slate-400">Preencha chave, nome e cidade para ver o QR de teste.</p>;
+                const v = lerNumero(pixTeste);
+                const codigo = montarPix({ chave, nome: pixNome, cidade: pixCidade, valor: Number.isNaN(v) ? undefined : v, txid: "TESTE" });
+                return (
+                  <div className="space-y-2 rounded-lg bg-slate-50 p-3">
+                    <div className="flex items-center gap-2 text-sm">
+                      <span className="font-semibold">Teste:</span> pague
+                      <input className="campo w-24 py-1 text-sm" inputMode="decimal" value={pixTeste} onChange={(e) => setPixTeste(e.target.value)} aria-label="Valor do teste" />
+                      com o app do seu banco e confira se o nome e a conta estão certos.
+                    </div>
+                    <PixNaTela codigo={codigo} valor={Number.isNaN(v) ? undefined : v} recebedor={pixNome} banco={pixBanco} />
+                  </div>
+                );
+              })()}
+            </div>
+          )}
           <h3 className="border-t border-slate-100 pt-4 font-semibold">Caixa</h3>
           <div>
             <label className="rotulo" htmlFor="dmax">Desconto máximo que o operador pode dar (%)</label>

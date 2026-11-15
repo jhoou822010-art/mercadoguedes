@@ -5,6 +5,8 @@ import { fmtData, fmtDataHora, fmtMoeda, fmtQtd, NOME_FORMA } from "../lib/forma
 import { imprimirCupom, larguraCupom, salvarLarguraCupom } from "../lib/imprimir";
 import { Modal } from "./Modal";
 import { LOGO_PADRAO } from "../lib/marca";
+import { pixDaLoja } from "../lib/pix";
+import { QrCode } from "./QrPix";
 
 function CabecalhoLoja({ config }: { config: Configuracoes | null }) {
   return (
@@ -55,6 +57,10 @@ export function CupomVenda({ venda, config, largura }: { venda: VendaCompleta; c
         <div key={p.id} className="linha"><span>{NOME_FORMA[p.forma as FormaPagamento]}</span><span>{fmtMoeda(p.valor)}</span></div>
       ))}
       {Number(venda.troco) > 0 && <div className="linha" style={{ fontWeight: 700 }}><span>Troco</span><span>{fmtMoeda(venda.troco)}</span></div>}
+      {(() => {
+        const valorPix = venda.venda_pagamentos.filter((p) => p.forma === "pix").reduce((s, p) => s + Number(p.valor), 0);
+        return valorPix > 0 && !cancelada ? <BlocoPix config={config} valor={valorPix} txid={`V${venda.id}`} titulo="Pagamento via Pix" /> : null;
+      })()}
       {venda.cliente_nome && (
         <>
           <hr />
@@ -173,6 +179,22 @@ export function CupomFechamento({ r, config, largura, contado, diferenca, observ
   );
 }
 
+/** QR Code Pix impresso (se o Pix da loja estiver configurado e a opção ligada). */
+function BlocoPix({ config, valor, txid, titulo, pequeno }: { config: Configuracoes | null; valor: number; txid: string; titulo: string; pequeno?: boolean }) {
+  if (config?.pix_no_comprovante === false) return null;
+  const codigo = pixDaLoja(config, valor, txid);
+  if (!codigo) return null;
+  return (
+    <div className="centro" style={{ marginTop: 6 }}>
+      <hr />
+      <div style={{ fontWeight: 700 }}>{titulo}: {fmtMoeda(valor)}</div>
+      <div style={{ display: "flex", justifyContent: "center", margin: "4px 0" }}><QrCode texto={codigo} tamanho={pequeno ? 96 : 132} /></div>
+      {!pequeno && <div style={{ fontSize: "0.8em", wordBreak: "break-all" }}>{codigo}</div>}
+      <div style={{ fontSize: "0.8em" }}>Recebedor: {config?.pix_nome}</div>
+    </div>
+  );
+}
+
 /** Extrato de um cliente (fiado ou crediário) para cobrança/assinatura. */
 export function CupomExtrato({ titulo, cliente, telefone, linhas, total, config, largura, rodape }: {
   titulo: string; cliente: string; telefone?: string | null; config: Configuracoes | null; largura: "80" | "58";
@@ -197,6 +219,7 @@ export function CupomExtrato({ titulo, cliente, telefone, linhas, total, config,
       <hr />
       <div className="linha" style={{ fontWeight: 700, fontSize: "1.2em" }}><span>TOTAL EM ABERTO</span><span>{fmtMoeda(total)}</span></div>
       {rodape && <div style={{ marginTop: 4, fontSize: "0.85em" }}>{rodape}</div>}
+      {total > 0 && <BlocoPix config={config} valor={total} txid="EXTRATO" titulo="Pague o total com Pix" />}
       <div style={{ marginTop: 18 }}>Assinatura do cliente: _____________</div>
       <hr />
       <div className="centro" style={{ fontSize: "0.8em" }}>Documento não fiscal · Loja Fácil</div>
@@ -222,6 +245,7 @@ export function CupomCarne({ venda, cliente, parcelas, config, largura }: {
           <div className="linha" style={{ fontWeight: 700 }}><span>Parcela {p.numero}/{p.total_parcelas}</span><span>{fmtMoeda(p.valor)}</span></div>
           <div className="linha"><span>Vencimento</span><span>{fmtData(p.vencimento)}</span></div>
           <div>{p.status === "paga" ? `PAGA em ${fmtDataHora(p.pago_em)}` : p.status === "cancelada" ? "CANCELADA" : "Pago em: ___/___/_____"}</div>
+          {p.status === "aberta" && <BlocoPix config={config} valor={Number(p.valor)} txid={`V${venda.id}P${p.numero}`} titulo={`Pix da parcela ${p.numero}`} pequeno />}
           <div style={{ marginTop: 8 }}>Recebido por: ______________</div>
         </div>
       ))}

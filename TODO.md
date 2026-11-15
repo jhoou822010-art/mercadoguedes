@@ -50,6 +50,9 @@
 - [x] "Item sem cadastro" renomeado para "Digite o produto"
 - [x] Importar/exportar/imprimir planilha de produtos
 - [x] Telas carregadas sob demanda (site 18% mais leve) e aviso de "Sem internet"
+- [x] Juros opcionais (%) no crediário
+- [x] Pix com QR Code (estático, chave da loja) no caixa, comprovante, extrato e carnê
+- [ ] Pix com confirmação automática / integração com maquininha (depende do banco e da maquininha)
 - [ ] Discutir: proteção da troca de senha (Meu perfil)
 
 ## Antes de publicar — perguntas para o responsável (item 14 do prompt)

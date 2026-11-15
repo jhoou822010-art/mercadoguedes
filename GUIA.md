@@ -268,6 +268,8 @@ Menu **Teclado do caixa**:
 
 Crediário (parcelado): no pagamento escolha **Crediário**, busque ou cadastre o cliente, escolha o número de parcelas e o 1º vencimento. O comprovante sai com as parcelas e linha de assinatura. Em **Vendas e crediário → Crediário** ficam as parcelas em aberto/atrasadas, com **Receber** e **Carnê** (imprimir). Em **Clientes**: cadastro, extrato e limite de crédito (só o administrador define o limite).
 
+**Pix com QR Code:** em **Usuários e loja → Pix para recebimento**, o administrador cadastra o tipo e a chave Pix, o nome do recebedor, a cidade e (opcional) o banco. Use o **QR de teste** (ex.: R$ 1,00) e pague com o app do banco para conferir se cai na conta certa. No caixa, ao escolher **Pix (F3)**, aparece o QR com o valor da compra e o “copia e cola”. **Confira no app do banco que o Pix caiu antes de confirmar** (o sistema não confirma sozinho; não aceite só “print” de comprovante). O QR também sai no comprovante, no extrato e em cada parcela do carnê (pode desligar).
+
 **Fechamento cego:** em **Usuários e loja → Caixa**, ligue “Ocultar valores das vendas”. As balconistas deixam de ver totais e o valor esperado; no fechamento só digitam o que contaram. O administrador vê sobra/falta em **Vendas e crediário → Caixas**.
 
 **Planilha de produtos:** em **Produtos** há **Importar planilha** (CSV do Excel, com prévia; cria e atualiza por código; célula vazia não apaga nada), **Exportar planilha** e **Imprimir lista**.

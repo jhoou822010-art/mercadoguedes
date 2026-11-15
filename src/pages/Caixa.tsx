@@ -11,6 +11,8 @@ import { Aviso, Cabecalho, Carregando } from "../components/Ui";
 import { Calculadora } from "../components/Calculadora";
 import { ClienteSeletor } from "../components/ClienteSeletor";
 import { COLUNAS_CAIXA, selecaoVenda } from "../lib/consultas";
+import { pixDaLoja } from "../lib/pix";
+import { PixNaTela } from "../components/QrPix";
 import { ACOES, mapaAtalhos, nomeTecla, rotulo, useAtalhos, type MapaAtalhos } from "../lib/atalhos";
 
 /* ======================================================================
@@ -480,7 +482,7 @@ function JanelaPagamento({ teclas, total, itens, desconto, onConcluida, onFechar
   const [enviando, setEnviando] = useState(false);
   const campoValor = useRef<HTMLInputElement>(null);
   const [calc, setCalc] = useState(false);
-  const { tem0006 } = useAuth();
+  const { tem0006, config: cfgLoja, ehAdmin: admin } = useAuth();
   const [credCliente, setCredCliente] = useState<Cliente | null>(null);
   const [credParcelas, setCredParcelas] = useState(1);
   const [credPrimeiro, setCredPrimeiro] = useState(hojeISO(30));
@@ -626,6 +628,20 @@ function JanelaPagamento({ teclas, total, itens, desconto, onConcluida, onFechar
               )}
               {(forma === "debito" || forma === "credito") && <p className="mt-2 text-xs text-slate-500">Passe o cartão na maquininha e confirme aqui depois de aprovado.</p>}
             </div>
+            {forma === "pix" && (() => {
+              const v = centavos(lerNumero(valor));
+              const codigo = !Number.isNaN(v) && v > 0 ? pixDaLoja(cfgLoja, v) : null;
+              if (!pixDaLoja(cfgLoja)) {
+                return <Aviso cor="atencao">{admin ? "Configure a chave Pix em Usuários e loja → Pix para recebimento para gerar o QR Code." : "O QR Code Pix ainda não foi configurado. Peça ao administrador."}</Aviso>;
+              }
+              if (!codigo) return null;
+              return (
+                <div className="space-y-2">
+                  <PixNaTela codigo={codigo} valor={v} recebedor={cfgLoja?.pix_nome} banco={cfgLoja?.pix_banco} />
+                  <p className="text-xs font-semibold text-atencao-700">⚠ Confira no app do banco que o Pix de {fmtMoeda(v)} caiu antes de confirmar. Não aceite só “print” de comprovante.</p>
+                </div>
+              );
+            })()}
             {forma === "crediario" && (
               <div className="space-y-3 rounded-lg border border-petroleo-200 bg-white p-3">
                 <p className="text-sm font-semibold text-petroleo-800">Crediário (parcelado)</p>

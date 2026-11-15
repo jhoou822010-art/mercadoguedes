@@ -1,5 +1,5 @@
 -- =====================================================================
--- Loja Fácil — Migração 0006 (crediário, clientes, ocultar valores e fechamento cego)
+-- Loja Fácil — Migração 0006 (crediário, clientes, Pix, ocultar valores e fechamento cego)
 -- Rode DEPOIS da 0001 a 0005, uma única vez, no SQL Editor do Supabase.
 -- Não apaga dados: cria tabelas/colunas e atualiza funções.
 -- Pode ser rodado de novo sem problema.
@@ -10,6 +10,18 @@
 -- ---------------------------------------------------------------------
 alter table public.configuracoes
   add column if not exists ocultar_valores_operador boolean not null default false;
+
+-- Pix para recebimento (QR Code estático gerado pelo próprio sistema).
+alter table public.configuracoes
+  add column if not exists pix_tipo text check (pix_tipo is null or pix_tipo in ('cpf', 'cnpj', 'email', 'telefone', 'aleatoria')),
+  add column if not exists pix_chave text,
+  add column if not exists pix_nome text,
+  add column if not exists pix_cidade text,
+  add column if not exists pix_banco text,
+  add column if not exists pix_no_comprovante boolean not null default true;
+
+comment on column public.configuracoes.pix_chave is 'Chave Pix da loja (o dinheiro cai direto na conta do recebedor).';
+comment on column public.configuracoes.pix_banco is 'Banco/instituição da conta Pix (só informativo).';
 
 comment on column public.configuracoes.ocultar_valores_operador is
   'Se verdadeiro, operadores não veem totais de vendas nem o valor esperado no fechamento do caixa (fechamento cego).';
