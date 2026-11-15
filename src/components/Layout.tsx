@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
+import { MeuPerfil } from "./MeuPerfil";
 
 interface Item { para: string; rotulo: string; icone: string; admin?: boolean }
 
@@ -55,14 +56,18 @@ function Menu({ onNavegar }: { onNavegar?: () => void }) {
 
 function Usuario() {
   const { perfil, config, sair } = useAuth();
+  const [editando, setEditando] = useState(false);
   return (
     <div className="border-t border-white/10 pt-4 text-sm">
       {config && <p className="mb-2 truncate text-xs text-petroleo-200">{config.nome_loja}</p>}
-      <p className="truncate font-medium text-white">{perfil?.nome}</p>
-      <p className="mb-3 text-xs text-petroleo-200">{perfil?.papel === "admin" ? "Administrador" : "Operador"}</p>
+      <button onClick={() => setEditando(true)} className="group mb-3 block w-full rounded-lg px-2 py-1 text-left hover:bg-white/10" title="Editar meu nome e senha">
+        <span className="block truncate font-medium text-white">{perfil?.nome}</span>
+        <span className="block text-xs text-petroleo-200">{perfil?.papel === "admin" ? "Administrador" : "Operador"} · <span className="underline group-hover:text-white">Meu perfil</span></span>
+      </button>
       <button onClick={sair} className="w-full rounded-lg border border-white/20 px-3 py-2 text-xs font-medium text-white hover:bg-white/10">
         Sair
       </button>
+      {editando && <MeuPerfil onFechar={() => setEditando(false)} />}
     </div>
   );
 }
