@@ -1,11 +1,38 @@
 import { Suspense, useEffect, useState } from "react";
-import { NavLink, Outlet, useLocation } from "react-router-dom";
+import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import { MeuPerfil } from "./MeuPerfil";
 import { LOGO_PADRAO } from "../lib/marca";
 import { Carregando } from "./Ui";
 import { SemConexao } from "./SemConexao";
 import { InstalarApp } from "./InstalarApp";
+import { abrirCaixaEmJanela, comprasEmAndamento, ehJanelaDoCaixa, EVENTO_CARRINHO, ouvirFixarCaixa } from "../lib/carrinho";
+import { fmtMoeda } from "../lib/format";
+
+/** Aviso nas outras telas: tem compra no caixa esperando. Nada se perde. */
+function CompraEmAndamento() {
+  const { perfil } = useAuth();
+  const local = useLocation();
+  const [, atualizar] = useState(0);
+  useEffect(() => {
+    const f = () => atualizar((n) => n + 1);
+    window.addEventListener(EVENTO_CARRINHO, f);
+    window.addEventListener("storage", f);
+    return () => { window.removeEventListener(EVENTO_CARRINHO, f); window.removeEventListener("storage", f); };
+  }, []);
+  if (local.pathname.endsWith("/caixa")) return null;
+  const compras = comprasEmAndamento(perfil?.id);
+  if (!compras.length) return null;
+  const c = compras[0];
+  return (
+    <div className="nao-imprimir fixed bottom-3 left-3 z-[35] flex max-w-[calc(100vw-24px)] flex-wrap items-center gap-2 rounded-xl border-2 border-acao-500 bg-white px-3 py-2 text-sm shadow-xl lg:left-[17rem]" role="status">
+      <span className="font-semibold text-slate-800">🛒 Compra em andamento</span>
+      <span className="text-slate-600">{c.itens} {c.itens === 1 ? "item" : "itens"} · {fmtMoeda(c.total)}</span>
+      <NavLink to="/caixa" className="btn-acao btn-pequeno">Voltar ao caixa</NavLink>
+      <button type="button" className="btn-secundario btn-pequeno" onClick={() => abrirCaixaEmJanela()} title="Abre o caixa numa janela própria, que pode ser movida e mudar de tamanho">⧉ Janela separada</button>
+    </div>
+  );
+}
 
 interface Item { para: string; rotulo: string; icone: string; admin?: boolean }
 
@@ -103,9 +130,29 @@ export function Layout() {
   const { config } = useAuth();
   const loja = config ? { nome: config.nome_loja, logo: config.logo } : null;
   useEffect(() => setMenuAberto(false), [local.pathname]);
+  const navegar = useNavigate();
+  useEffect(() => ouvirFixarCaixa(() => navegar("/caixa")), [navegar]);
   useEffect(() => {
     document.title = config?.nome_loja ? `${config.nome_loja} · Loja Fácil` : "Loja Fácil";
   }, [config?.nome_loja]);
+
+  // Caixa aberto em janela separada: só o caixa, sem menu (a janela principal continua com tudo).
+  if (ehJanelaDoCaixa() && local.pathname.endsWith("/caixa")) {
+    return (
+      <div className="min-h-screen">
+        <header className="nao-imprimir flex items-center justify-between gap-2 bg-petroleo-800 px-4 py-1.5 text-xs text-petroleo-100">
+          <span>🛒 Caixa em janela separada · mova e mude o tamanho desta janela à vontade</span>
+          <span>A compra é a mesma da janela principal</span>
+        </header>
+        <main className="min-w-0 px-3 py-3 sm:px-4">
+          <SemConexao />
+          <Suspense fallback={<Carregando texto="Abrindo a tela…" />}>
+            <Outlet />
+          </Suspense>
+        </main>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen lg:flex">
@@ -148,6 +195,7 @@ export function Layout() {
           </Suspense>
         </div>
       </main>
+      <CompraEmAndamento />
     </div>
   );
 }

@@ -100,6 +100,42 @@ export function cnpjValido(v: string) {
   return calc(12) === Number(d[12]) && calc(13) === Number(d[13]);
 }
 
+/** Confere os dígitos verificadores do CPF (só números). */
+export function cpfValido(v: string) {
+  const d = v.replace(/\D/g, "");
+  if (d.length !== 11 || /^(\d)\1+$/.test(d)) return false;
+  const dv = (n: number) => {
+    let soma = 0;
+    for (let i = 0; i < n; i++) soma += Number(d[i]) * (n + 1 - i);
+    const r = (soma * 10) % 11;
+    return r === 10 ? 0 : r;
+  };
+  return dv(9) === Number(d[9]) && dv(10) === Number(d[10]);
+}
+
+/**
+ * CPF ou CNPJ no mesmo campo: até 11 números vira CPF (000.000.000-00),
+ * de 12 a 14 vira CNPJ (00.000.000/0000-00).
+ */
+export function mascaraDocumento(v: string) {
+  const d = v.replace(/\D/g, "").slice(0, 14);
+  if (d.length <= 11) {
+    return d
+      .replace(/^(\d{3})(\d)/, "$1.$2")
+      .replace(/^(\d{3})\.(\d{3})(\d)/, "$1.$2.$3")
+      .replace(/\.(\d{3})(\d)/, ".$1-$2");
+  }
+  return mascaraCnpj(d);
+}
+
+/** "CPF", "CNPJ" ou "" (incompleto ou com número errado). */
+export function tipoDocumento(v: string): "CPF" | "CNPJ" | "" {
+  const d = v.replace(/\D/g, "");
+  if (d.length === 11 && cpfValido(d)) return "CPF";
+  if (d.length === 14 && cnpjValido(d)) return "CNPJ";
+  return "";
+}
+
 /** Data de hoje (fuso do navegador) no formato AAAA-MM-DD. */
 export function hojeISO(somarDias = 0) {
   const d = new Date();

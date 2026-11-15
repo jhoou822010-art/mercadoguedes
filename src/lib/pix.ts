@@ -5,7 +5,7 @@
    A confirmação do pagamento é feita pela balconista no app do banco.
    ===================================================================== */
 
-import { cnpjValido } from "./format";
+import { cnpjValido, cpfValido } from "./format";
 
 export type TipoChavePix = "cpf" | "cnpj" | "email" | "telefone" | "aleatoria";
 
@@ -20,18 +20,6 @@ export const NOME_TIPO_CHAVE: Record<TipoChavePix, string> = {
 /** Tira acentos e caracteres que alguns bancos recusam no QR. */
 function limparTexto(t: string, max: number) {
   return t.normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^A-Za-z0-9 .,\-/&]/g, "").replace(/\s+/g, " ").trim().slice(0, max);
-}
-
-/** Confere os dígitos verificadores do CPF. */
-function cpfValido(d: string) {
-  if (d.length !== 11 || /^(\d)\1+$/.test(d)) return false;
-  const dv = (n: number) => {
-    let soma = 0;
-    for (let i = 0; i < n; i++) soma += Number(d[i]) * (n + 1 - i);
-    const r = (soma * 10) % 11;
-    return r === 10 ? 0 : r;
-  };
-  return dv(9) === Number(d[9]) && dv(10) === Number(d[10]);
 }
 
 /** Coloca a chave no formato que o Pix exige. Devolve "" se a chave for inválida. */

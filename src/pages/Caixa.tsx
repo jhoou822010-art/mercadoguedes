@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { useNavigate } from "react-router-dom";
 import { supabase, mensagemErro } from "../lib/supabase";
 import { centavos, dividirParcelas, fmtData, fmtDataHora, fmtMoeda, fmtQtd, hojeISO, lerNumero, NOME_FORMA, somarMeses } from "../lib/format";
 import { FORMAS, type Cliente, type Caixa as TCaixa, type FormaPagamento, type ProdutoView, type ResumoCaixa, type Venda, type VendaCompleta } from "../lib/types";
@@ -8,7 +9,8 @@ import { Confirmar, Modal } from "../components/Modal";
 import { ProdutoBusca } from "../components/ProdutoBusca";
 import { CupomFechamento, CupomVenda, JanelaComprovante } from "../components/Comprovante";
 import { Aviso, Cabecalho, Carregando } from "../components/Ui";
-import { Calculadora } from "../components/Calculadora";
+import { ativarCalculadora, Calculadora } from "../components/Calculadora";
+import { abrirCaixaEmJanela, chaveCarrinho, ehJanelaDoCaixa, fixarCaixaNaPrincipal, gravarCarrinho, lerCarrinhoGuardado } from "../lib/carrinho";
 import { ClienteSeletor } from "../components/ClienteSeletor";
 import { COLUNAS_CAIXA, selecaoVenda } from "../lib/consultas";
 import { pixDaLoja } from "../lib/pix";
@@ -94,14 +96,9 @@ function produtoAvulso(descricao: string, preco: number): ProdutoView {
 }
 type Desconto = { tipo: "valor" | "percentual"; valor: string };
 
-function chaveCarrinho(caixaId: number) { return `lojafacil.carrinho.${caixaId}`; }
-
 function lerCarrinho(caixaId: number): { itens: ItemCarrinho[]; desconto: Desconto } {
-  try {
-    const t = sessionStorage.getItem(chaveCarrinho(caixaId));
-    if (t) return JSON.parse(t);
-  } catch { /* ignora */ }
-  return { itens: [], desconto: { tipo: "valor", valor: "" } };
+  const c = lerCarrinhoGuardado<ItemCarrinho, Desconto>(caixaId);
+  return { itens: c?.itens ?? [], desconto: c?.desconto ?? { tipo: "valor", valor: "" } };
 }
 
 const INTEIRAS = ["UN", "PCT", "CX"];
@@ -113,15 +110,30 @@ function PontoDeVenda({ caixa, onFechado }: { caixa: TCaixa; onFechado: () => vo
   const [itens, setItens] = useState<ItemCarrinho[]>(inicial.itens);
   const [desconto, setDesconto] = useState<Desconto>(inicial.desconto);
   const [janela, setJanela] = useState<"" | "pagamento" | "desconto" | "limpar" | "sangria" | "suprimento" | "fechar" | "calculadora" | "atalhos" | "avulso">("");
+  const [calcAberta, setCalcAberta] = useState(false);
   const teclas = useMemo(() => mapaAtalhos(config?.atalhos), [config?.atalhos]);
   const [comprovante, setComprovante] = useState<VendaCompleta | null>(null);
   const busca = useRef<HTMLInputElement>(null);
   const qtdRefs = useRef<Record<number, HTMLInputElement | null>>({});
 
-  // Guarda o carrinho nesta aba, para não perder a compra se a página recarregar.
+  // Guarda a compra no navegador: trocar de menu, recarregar ou faltar energia não perde nada.
+  const { perfil } = useAuth();
+  const navegar = useNavigate();
   useEffect(() => {
-    try { sessionStorage.setItem(chaveCarrinho(caixa.id), JSON.stringify({ itens, desconto })); } catch { /* ignora */ }
-  }, [itens, desconto, caixa.id]);
+    gravarCarrinho(caixa.id, { itens, desconto, usuario_id: perfil?.id });
+  }, [itens, desconto, caixa.id, perfil?.id]);
+  // Caixa aberto em duas janelas (principal e separada): as duas mostram a mesma compra.
+  useEffect(() => {
+    const k = chaveCarrinho(caixa.id);
+    const ouvir = (e: StorageEvent) => {
+      if (e.key !== k) return;
+      const c = lerCarrinho(caixa.id);
+      setItens(c.itens);
+      setDesconto(c.desconto);
+    };
+    window.addEventListener("storage", ouvir);
+    return () => window.removeEventListener("storage", ouvir);
+  }, [caixa.id]);
 
   const focarBusca = () => setTimeout(() => busca.current?.focus(), 50);
 
@@ -214,7 +226,7 @@ function PontoDeVenda({ caixa, onFechado }: { caixa: TCaixa; onFechado: () => vo
     pagamento: () => void abrirPagamento(),
     buscar_produto: focarBusca,
     desconto: () => itens.length && setJanela("desconto"),
-    calculadora: () => setJanela("calculadora"),
+    calculadora: () => (calcAberta ? ativarCalculadora() : setCalcAberta(true)),
     item_avulso: () => abrirAvulso(),
     cancelar_compra: () => itens.length && setJanela("limpar"),
     quantidade_ultimo: () => {
@@ -256,6 +268,25 @@ function PontoDeVenda({ caixa, onFechado }: { caixa: TCaixa; onFechado: () => vo
         <div>
           <h1 className="text-2xl font-bold">Caixa nº {caixa.id}</h1>
           <p className="text-sm text-slate-500">Aberto em {fmtDataHora(caixa.aberto_em)} · {caixa.usuario_nome}</p>
+          <div className="nao-imprimir mt-2">
+            {ehJanelaDoCaixa() ? (
+              <button type="button" className="btn-secundario btn-pequeno border-petroleo-300 text-petroleo-800" onClick={fixarCaixaNaPrincipal} title="Fecha esta janela e o caixa volta para a janela principal, com o menu. A compra continua a mesma.">
+                📌 Fixar na janela principal
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="btn-secundario btn-pequeno border-petroleo-300 text-petroleo-800"
+                onClick={() => {
+                  if (!abrirCaixaEmJanela()) return avisar("erro", "O navegador bloqueou a janela. Clique no aviso de pop-up do navegador e escolha “Sempre permitir” para este site.");
+                  navegar("/");
+                }}
+                title="Solta o caixa numa janela própria, que pode ser movida e mudar de tamanho. A compra continua a mesma."
+              >
+                ⧉ Soltar em janela separada
+              </button>
+            )}
+          </div>
         </div>
         <div className="flex flex-wrap gap-2">
           <button className="btn-secundario btn-pequeno" onClick={() => setJanela("atalhos")}>⌨ Atalhos{rotulo(teclas, "ajuda_atalhos")}</button>
@@ -267,9 +298,9 @@ function PontoDeVenda({ caixa, onFechado }: { caixa: TCaixa; onFechado: () => vo
         </div>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-3">
+      <div className="grid gap-4 md:grid-cols-3">
         {/* Itens */}
-        <section className="cartao flex min-h-[24rem] flex-col lg:col-span-2">
+        <section className="cartao flex min-h-[12rem] flex-col md:col-span-2 md:min-h-[24rem]">
           <div className="border-b border-slate-100 p-4">
             <ProdutoBusca onSelecionar={adicionar} autoFocus campoRef={busca} placeholder="Passe o leitor ou digite nome / código" />
           </div>
@@ -319,7 +350,7 @@ function PontoDeVenda({ caixa, onFechado }: { caixa: TCaixa; onFechado: () => vo
         </section>
 
         {/* Totais */}
-        <aside className="cartao flex flex-col gap-3 p-5 lg:sticky lg:top-6 lg:self-start">
+        <aside className="cartao flex flex-col gap-3 p-5 md:sticky md:top-6 md:self-start">
           <div className="flex justify-between text-sm"><span className="text-slate-500">Itens</span><span>{itens.length}</span></div>
           <div className="flex justify-between text-sm"><span className="text-slate-500">Subtotal</span><span>{fmtMoeda(subtotal)}</span></div>
           <div className="flex items-center justify-between text-sm">
@@ -340,7 +371,7 @@ function PontoDeVenda({ caixa, onFechado }: { caixa: TCaixa; onFechado: () => vo
                 ✚ Digite o produto{rotulo(teclas, "item_avulso")}
               </button>
             )}
-            <button className="btn-secundario btn-pequeno" onClick={() => setJanela("calculadora")}>🧮 Calculadora{rotulo(teclas, "calculadora")}</button>
+            <button className="btn-secundario btn-pequeno" onClick={() => (calcAberta ? ativarCalculadora() : setCalcAberta(true))}>🧮 Calculadora{rotulo(teclas, "calculadora")}</button>
             <button className="btn-secundario btn-pequeno" disabled={!itens.length} onClick={() => setJanela("limpar")}>Cancelar compra{rotulo(teclas, "cancelar_compra")}</button>
             <button className="btn-secundario btn-pequeno" disabled={!itens.length} onClick={() => mudarUltimo(1)}>+1 no último{rotulo(teclas, "mais_um")}</button>
             <button className="btn-secundario btn-pequeno" disabled={!itens.length} onClick={() => mudarUltimo(-1)}>−1 no último{rotulo(teclas, "menos_um")}</button>
@@ -386,7 +417,7 @@ function PontoDeVenda({ caixa, onFechado }: { caixa: TCaixa; onFechado: () => vo
         <JanelaSangria tipo={janela} onFechar={() => { setJanela(""); focarBusca(); }} />
       )}
 
-      {janela === "calculadora" && <Calculadora onFechar={() => { setJanela(""); focarBusca(); }} />}
+      {calcAberta && <Calculadora onFechar={() => { setCalcAberta(false); if (!janela) focarBusca(); }} />}
       {janela === "avulso" && <JanelaAvulso onAdicionar={adicionarAvulso} onFechar={() => { setJanela(""); focarBusca(); }} />}
       {janela === "atalhos" && <JanelaAtalhos teclas={teclas} onFechar={() => { setJanela(""); focarBusca(); }} />}
 
@@ -475,6 +506,12 @@ function JanelaPagamento({ teclas, total, itens, desconto, onConcluida, onFechar
 }) {
   const [pags, setPags] = useState<Pag[]>([]);
   const [forma, setForma] = useState<FormaPagamento>("dinheiro");
+  // Pix e crediário mostram mais coisas embaixo: rola a janela para elas ficarem à vista.
+  useEffect(() => {
+    if (forma !== "pix" && forma !== "crediario") return;
+    const t = setTimeout(() => document.getElementById("pag-extra")?.scrollIntoView({ block: "nearest", behavior: "smooth" }), 80);
+    return () => clearTimeout(t);
+  }, [forma]);
   const [valor, setValor] = useState(String(total).replace(".", ","));
   const [cliente, setCliente] = useState("");
   const [telefone, setTelefone] = useState("");
@@ -512,8 +549,8 @@ function JanelaPagamento({ teclas, total, itens, desconto, onConcluida, onFechar
   useAtalhos(teclas, {
     ...Object.fromEntries(FORMAS.map((f) => [`pag_${f}`, () => escolherForma(f)])),
     pag_exato: () => { setValor(falta > 0 ? String(falta).replace(".", ",") : ""); setTimeout(() => campoValor.current?.select(), 30); },
-    pag_calculadora: () => setCalc(true),
-  }, !calc && !enviando);
+    pag_calculadora: () => (calc ? ativarCalculadora() : setCalc(true)),
+  }, !enviando);
 
   function validarNovo(f: FormaPagamento, v: number): string {
     if (Number.isNaN(v) || v <= 0) return "Digite um valor maior que zero.";
@@ -612,7 +649,7 @@ function JanelaPagamento({ teclas, total, itens, desconto, onConcluida, onFechar
               <label className="rotulo" htmlFor="valor-pag">Valor em {NOME_FORMA[forma].toLowerCase()} {forma === "dinheiro" && "(valor recebido do cliente)"}</label>
               <div className="flex gap-2">
                 <input id="valor-pag" ref={campoValor} className="campo text-2xl font-bold" inputMode="decimal" value={valor} onChange={(e) => { setValor(e.target.value); setErro(""); }} autoFocus onFocus={(e) => e.target.select()} />
-                <button type="button" className="btn-secundario shrink-0" onClick={() => setCalc(true)} title={`Calculadora${rotulo(teclas, "pag_calculadora")}`}>🧮</button>
+                <button type="button" className="btn-secundario shrink-0" onClick={() => (calc ? ativarCalculadora() : setCalc(true))} title={`Calculadora${rotulo(teclas, "pag_calculadora")}`}>🧮</button>
               </div>
               {forma === "dinheiro" && (
                 <div className="mt-2 flex flex-wrap gap-2">
@@ -628,6 +665,7 @@ function JanelaPagamento({ teclas, total, itens, desconto, onConcluida, onFechar
               )}
               {(forma === "debito" || forma === "credito") && <p className="mt-2 text-xs text-slate-500">Passe o cartão na maquininha e confirme aqui depois de aprovado.</p>}
             </div>
+            <div id="pag-extra" className="space-y-3">
             {forma === "pix" && (() => {
               const v = centavos(lerNumero(valor));
               const codigo = !Number.isNaN(v) && v > 0 ? pixDaLoja(cfgLoja, v) : null;
@@ -688,6 +726,7 @@ function JanelaPagamento({ teclas, total, itens, desconto, onConcluida, onFechar
                 })()}
               </div>
             )}
+            </div>
           </>
         )}
 
@@ -978,7 +1017,7 @@ function JanelaAvulso({ onAdicionar, onFechar }: { onAdicionar: (descricao: stri
             <label className="rotulo" htmlFor="av-preco">Preço unitário (R$)</label>
             <div className="flex gap-1">
               <input id="av-preco" ref={campoPreco} className="campo min-w-0 text-lg font-bold" inputMode="decimal" value={preco} onChange={(e) => { setPreco(e.target.value); setErro(""); }} placeholder="0,00" />
-              <button type="button" className="btn-secundario shrink-0 px-3" title="Calculadora" onClick={() => setCalc(true)}>🧮</button>
+              <button type="button" className="btn-secundario shrink-0 px-3" title="Calculadora" onClick={() => (calc ? ativarCalculadora() : setCalc(true))}>🧮</button>
             </div>
           </div>
           <div>
