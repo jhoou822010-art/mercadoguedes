@@ -5,6 +5,7 @@ import type { Configuracoes as TConfig, Papel, Perfil, VendaCompleta } from "../
 import { CupomVenda, JanelaComprovante } from "../components/Comprovante";
 import { larguraCupom, salvarLarguraCupom } from "../lib/imprimir";
 import { reduzirImagem } from "../lib/imagem";
+import { LOGO_PADRAO } from "../lib/marca";
 import { useAuth } from "../contexts/AuthContext";
 import { useToast } from "../components/Toast";
 import { Confirmar } from "../components/Modal";
@@ -158,12 +159,12 @@ export default function Configuracoes() {
             <span className="rotulo">Logo da loja</span>
             {semColunaLogo ? (
               <Aviso cor="atencao">
-                Para enviar a logo, rode antes o arquivo <code>supabase/migrations/0004_logo_loja.sql</code> no SQL Editor do Supabase e recarregue a página.
+                A logo do sistema já aparece no menu e no comprovante. Para trocar a logo por esta tela, rode antes o arquivo <code>supabase/migrations/0004_logo_loja.sql</code> no SQL Editor do Supabase.
               </Aviso>
             ) : (
               <div className="flex items-center gap-4">
                 <div className="flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-dashed border-slate-300 bg-slate-50">
-                  {logo ? <img src={logo} alt="Logo da loja" className="h-full w-full object-contain p-1" /> : <span className="text-center text-[11px] text-slate-400">sem logo</span>}
+                  <img src={logo || LOGO_PADRAO} alt="Logo da loja" className="h-full w-full object-contain p-1" />
                 </div>
                 <div className="space-y-2">
                   <label className="btn-secundario btn-pequeno cursor-pointer">
@@ -172,7 +173,9 @@ export default function Configuracoes() {
                       onChange={(e) => { void escolherLogo(e.target.files?.[0]); e.target.value = ""; }} />
                   </label>
                   {logo && <button type="button" className="ml-2 text-xs font-semibold text-critico-600 hover:underline" onClick={() => setLogo(null)}>Remover</button>}
-                  <p className="text-xs text-slate-400">PNG, JPG ou WEBP. Fundo transparente fica melhor. O sistema reduz o tamanho sozinho.</p>
+                  <p className="text-xs text-slate-400">
+                    {logo ? "Logo enviada por você." : "Usando a logo que já vem no sistema."} PNG, JPG ou WEBP; o sistema reduz o tamanho sozinho.
+                  </p>
                 </div>
               </div>
             )}
@@ -193,7 +196,7 @@ export default function Configuracoes() {
           </label>
           {!semColunaLogo && (
             <label className="flex items-center gap-2 text-sm">
-              <input type="checkbox" className="h-4 w-4 accent-petroleo-700" checked={logoNoComprovante} onChange={(e) => setLogoNoComprovante(e.target.checked)} disabled={!logo} />
+              <input type="checkbox" className="h-4 w-4 accent-petroleo-700" checked={logoNoComprovante} onChange={(e) => setLogoNoComprovante(e.target.checked)} />
               Mostrar a logo no comprovante (sai em preto e branco)
             </label>
           )}

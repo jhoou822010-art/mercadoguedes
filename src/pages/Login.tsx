@@ -45,7 +45,7 @@ export default function Login() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-petroleo-800 to-petroleo-600 px-4 py-10">
       <div className="w-full max-w-sm">
-        <div className="mb-6 flex justify-center"><Logo claro /></div>
+        <div className="mb-6 flex justify-center"><div className="w-full max-w-xs"><Logo claro grande /></div></div>
         <form onSubmit={enviar} className="cartao space-y-4 p-6">
           <h1 className="text-xl font-bold text-slate-800">{modo === "entrar" ? "Entrar" : "Criar conta"}</h1>
           {erro && <Aviso cor="critico">{erro}</Aviso>}

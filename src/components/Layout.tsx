@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import { MeuPerfil } from "./MeuPerfil";
+import { LOGO_PADRAO } from "../lib/marca";
 
 interface Item { para: string; rotulo: string; icone: string; admin?: boolean }
 
@@ -18,15 +19,29 @@ const ITENS: Item[] = [
   { para: "/teclado", rotulo: "Teclado do caixa", icone: "⌨", admin: true },
 ];
 
-export function Logo({ claro = false, loja }: { claro?: boolean; loja?: { nome: string; logo?: string | null } | null }) {
+export function Logo({ claro = false, loja, compacto = false, grande = false }: { claro?: boolean; loja?: { nome: string; logo?: string | null } | null; compacto?: boolean; grande?: boolean }) {
   const nome = loja?.nome?.trim();
+  const fonte = loja?.logo || LOGO_PADRAO;
+  const [falhou, setFalhou] = useState<string | null>(null);
+
+  // Logo da loja (enviada pela tela ou a padrão do sistema), num fundo branco para ficar legível.
+  if (falhou !== fonte) {
+    return (
+      <div className={`flex items-center justify-center rounded-xl bg-white ${compacto ? "h-11 px-2" : "w-full p-2"}`}>
+        <img
+          src={fonte}
+          alt={nome ? `Logo ${nome}` : "Logo da loja"}
+          className={compacto ? "h-9 w-auto max-w-[160px] object-contain" : `mx-auto w-auto max-w-full object-contain ${grande ? "max-h-40" : "max-h-20"}`}
+          onError={() => setFalhou(fonte)}
+        />
+      </div>
+    );
+  }
+
+  // Sem logo: ícone e nome.
   return (
     <div className="flex min-w-0 items-center gap-2.5">
-      {loja?.logo ? (
-        <img src={loja.logo} alt={nome ? `Logo ${nome}` : "Logo"} className="h-10 w-10 shrink-0 rounded-lg bg-white object-contain p-0.5" />
-      ) : (
-        <img src={`${import.meta.env.BASE_URL}favicon.svg`} alt="" className="h-9 w-9 shrink-0" />
-      )}
+      <img src={`${import.meta.env.BASE_URL}favicon.svg`} alt="" className="h-9 w-9 shrink-0" />
       <div className="min-w-0 leading-tight">
         <div className={`truncate text-lg font-bold ${claro ? "text-white" : "text-petroleo-800"}`}>{nome || "Loja Fácil"}</div>
         <div className={`truncate text-[11px] ${claro ? "text-petroleo-200" : "text-slate-500"}`}>
@@ -101,7 +116,7 @@ export function Layout() {
 
       {/* Barra superior (celular/tablet) */}
       <header className="nao-imprimir sticky top-0 z-20 flex items-center justify-between bg-petroleo-800 px-4 py-3 lg:hidden">
-        <Logo claro loja={loja} />
+        <Logo claro loja={loja} compacto />
         <button onClick={() => setMenuAberto(true)} className="rounded-lg p-2 text-2xl leading-none text-white hover:bg-white/10" aria-label="Abrir menu">
           ☰
         </button>
