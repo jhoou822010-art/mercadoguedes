@@ -63,6 +63,19 @@ export function CupomVenda({ venda, config, largura }: { venda: VendaCompleta; c
           {venda.parcelas && venda.parcelas.length > 0 && (
             <div style={{ marginTop: 4 }}>
               <div style={{ fontWeight: 700 }}>Crediário em {venda.parcelas[0].total_parcelas}x</div>
+              {(() => {
+                const pc = venda.venda_pagamentos.find((p) => p.forma === "crediario");
+                const j = Number(pc?.juros_percentual ?? 0);
+                if (!pc || j <= 0) return null;
+                const comJuros = Number(pc.valor_com_juros ?? 0);
+                return (
+                  <>
+                    <div className="linha"><span>Valor parcelado</span><span>{fmtMoeda(pc.valor)}</span></div>
+                    <div className="linha"><span>Juros ({String(j).replace(".", ",")}%)</span><span>+ {fmtMoeda(comJuros - Number(pc.valor))}</span></div>
+                    <div className="linha" style={{ fontWeight: 700 }}><span>Total do crediário</span><span>{fmtMoeda(comJuros)}</span></div>
+                  </>
+                );
+              })()}
               {[...venda.parcelas].sort((a, b) => a.numero - b.numero).map((p) => (
                 <div key={p.id} className="linha">
                   <span>{p.numero}/{p.total_parcelas} · vence {fmtData(p.vencimento)}</span>

@@ -465,7 +465,7 @@ function JanelaDesconto({ subtotal, atual, limite, onAplicar, onFechar }: {
 
 /* ---------------------------- Pagamento ---------------------------- */
 
-interface Pag { forma: FormaPagamento; valor: number; cliente_id?: number; cliente_nome?: string; parcelas?: number; primeiro_vencimento?: string }
+interface Pag { forma: FormaPagamento; valor: number; cliente_id?: number; cliente_nome?: string; parcelas?: number; primeiro_vencimento?: string; juros_percentual?: number; total_com_juros?: number }
 
 function JanelaPagamento({ teclas, total, itens, desconto, onConcluida, onFechar }: {
   teclas: MapaAtalhos;
@@ -484,6 +484,10 @@ function JanelaPagamento({ teclas, total, itens, desconto, onConcluida, onFechar
   const [credCliente, setCredCliente] = useState<Cliente | null>(null);
   const [credParcelas, setCredParcelas] = useState(1);
   const [credPrimeiro, setCredPrimeiro] = useState(hojeISO(30));
+  const [credJuros, setCredJuros] = useState("");
+  // Juros opcionais: vazio = sem juros. Aplicados uma vez sobre o valor parcelado.
+  const jurosNum = credJuros.trim() ? lerNumero(credJuros) : 0;
+  const jurosValido = !Number.isNaN(jurosNum) && jurosNum >= 0 && jurosNum <= 100;
 
   const pago = centavos(pags.reduce((s, p) => s + p.valor, 0));
   const falta = centavos(Math.max(0, total - pago));
@@ -525,7 +529,9 @@ function JanelaPagamento({ teclas, total, itens, desconto, onConcluida, onFechar
       if (pags.some((p) => p.forma === "crediario")) { setErro("Use apenas um pagamento em crediário por venda."); return null; }
       if (!credCliente) { setErro("Escolha ou cadastre o cliente do crediário."); return null; }
       if (credPrimeiro < hojeISO()) { setErro("O primeiro vencimento não pode ser uma data passada."); return null; }
-      novo = { forma, valor: v, cliente_id: credCliente.id, cliente_nome: credCliente.nome, parcelas: credParcelas, primeiro_vencimento: credPrimeiro };
+      if (!jurosValido) { setErro("Juros inválido: use um número de 0 a 100 (ex.: 5 ou 2,5)."); return null; }
+      novo = { forma, valor: v, cliente_id: credCliente.id, cliente_nome: credCliente.nome, parcelas: credParcelas, primeiro_vencimento: credPrimeiro,
+        juros_percentual: centavos(jurosNum), total_com_juros: centavos(v * (1 + jurosNum / 100)) };
     }
     const novos = [...pags, novo];
     setPags(novos);
@@ -542,7 +548,7 @@ function JanelaPagamento({ teclas, total, itens, desconto, onConcluida, onFechar
     const { data, error } = await supabase.rpc("finalizar_venda", {
       p_itens: itens,
       p_desconto: desconto,
-      p_pagamentos: lista.map(({ cliente_nome: _n, ...p }) => p),
+      p_pagamentos: lista.map(({ cliente_nome: _n, total_com_juros: _t, ...p }) => p),
       p_cliente_nome: cliente.trim() || null,
       p_cliente_telefone: telefone.trim() || null,
     });
@@ -635,18 +641,33 @@ function JanelaPagamento({ teclas, total, itens, desconto, onConcluida, onFechar
                     <label className="rotulo" htmlFor="cred-d">1º vencimento</label>
                     <input id="cred-d" type="date" className="campo" value={credPrimeiro} min={hojeISO()} onChange={(e) => setCredPrimeiro(e.target.value)} />
                   </div>
+                  <div className="col-span-2 sm:col-span-1">
+                    <label className="rotulo" htmlFor="cred-j">Juros (%) <span className="font-normal text-slate-400">— opcional</span></label>
+                    <input id="cred-j" className={`campo ${jurosValido ? "" : "campo-erro"}`} inputMode="decimal" placeholder="0 = sem juros" value={credJuros} onChange={(e) => { setCredJuros(e.target.value); setErro(""); }} />
+                  </div>
                 </div>
                 {(() => {
                   const v = centavos(lerNumero(valor));
                   if (Number.isNaN(v) || v <= 0) return null;
+                  const j = jurosValido ? jurosNum : 0;
+                  const comJuros = centavos(v * (1 + j / 100));
                   return (
+                    <>
+                    {j > 0 && (
+                      <div className="grid grid-cols-3 gap-2 rounded-lg bg-atencao-50 p-2 text-center text-xs">
+                        <div><p className="text-slate-500">Valor parcelado</p><p className="font-semibold">{fmtMoeda(v)}</p></div>
+                        <div><p className="text-slate-500">Juros ({String(j).replace(".", ",")}%)</p><p className="font-semibold text-acao-700">+ {fmtMoeda(comJuros - v)}</p></div>
+                        <div><p className="text-slate-500">Total a pagar</p><p className="text-base font-bold">{fmtMoeda(comJuros)}</p></div>
+                      </div>
+                    )}
                     <ul className="grid gap-1 text-xs text-slate-600 sm:grid-cols-2">
-                      {dividirParcelas(v, credParcelas).map((x, i) => (
+                      {dividirParcelas(comJuros, credParcelas).map((x, i) => (
                         <li key={i} className="flex justify-between rounded bg-slate-50 px-2 py-1">
                           <span>{i + 1}/{credParcelas} · {fmtData(somarMeses(credPrimeiro, i))}</span><strong>{fmtMoeda(x)}</strong>
                         </li>
                       ))}
                     </ul>
+                    </>
                   );
                 })()}
               </div>
@@ -658,7 +679,7 @@ function JanelaPagamento({ teclas, total, itens, desconto, onConcluida, onFechar
           <ul className="divide-y divide-slate-100 rounded-lg border border-slate-200">
             {pags.map((p, i) => (
               <li key={i} className="flex items-center justify-between px-3 py-2 text-sm">
-                <span>{NOME_FORMA[p.forma]}{p.forma === "crediario" && <span className="text-xs text-slate-500"> · {p.parcelas}x · {p.cliente_nome}</span>}</span>
+                <span>{NOME_FORMA[p.forma]}{p.forma === "crediario" && <span className="text-xs text-slate-500"> · {p.parcelas}x · {p.cliente_nome}{p.juros_percentual ? ` · juros ${String(p.juros_percentual).replace(".", ",")}% = ${fmtMoeda(p.total_com_juros ?? p.valor)}` : ""}</span>}</span>
                 <span className="flex items-center gap-3">
                   <strong>{fmtMoeda(p.valor)}</strong>
                   <button type="button" className="text-slate-400 hover:text-critico-600" aria-label="Remover pagamento" onClick={() => setPags(pags.filter((_, n) => n !== i))}>✕</button>

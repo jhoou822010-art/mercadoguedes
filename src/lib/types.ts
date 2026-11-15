@@ -156,6 +156,9 @@ export interface VendaPagamento {
   fiado_recebido_em: string | null;
   fiado_recebido_forma: FormaPagamento | null;
   fiado_recebido_por: string | null;
+  /** Crediário: juros (%) e valor parcelado com juros (SQL 0006). */
+  juros_percentual?: number;
+  valor_com_juros?: number | null;
 }
 
 export interface Venda {

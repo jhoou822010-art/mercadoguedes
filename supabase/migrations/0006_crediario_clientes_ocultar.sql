@@ -81,6 +81,15 @@ alter table public.venda_pagamentos drop constraint if exists venda_pagamentos_f
 alter table public.venda_pagamentos add constraint venda_pagamentos_forma_check
   check (forma in ('dinheiro', 'pix', 'debito', 'credito', 'vale_alimentacao', 'vale_refeicao', 'fiado', 'crediario', 'outro'));
 
+-- Juros opcionais do crediário (percentual sobre o valor parcelado).
+alter table public.venda_pagamentos
+  add column if not exists juros_percentual numeric(6, 2) not null default 0
+    check (juros_percentual >= 0 and juros_percentual <= 100),
+  add column if not exists valor_com_juros numeric(12, 2);
+
+comment on column public.venda_pagamentos.juros_percentual is 'Crediário: juros (%) aplicados uma vez sobre o valor parcelado. 0 = sem juros.';
+comment on column public.venda_pagamentos.valor_com_juros is 'Crediário: valor parcelado + juros (soma das parcelas).';
+
 alter table public.caixa_movimentos drop constraint if exists caixa_movimentos_tipo_check;
 alter table public.caixa_movimentos add constraint caixa_movimentos_tipo_check
   check (tipo in ('sangria', 'suprimento', 'recebimento_fiado', 'recebimento_crediario'));
@@ -357,7 +366,8 @@ grant select (id, usuario_id, usuario_nome, status, valor_abertura, aberto_em, f
 
 -- ---------------------------------------------------------------------
 -- 6. Venda com crediário (atualiza finalizar_venda)
---    Pagamento: {"forma":"crediario","valor":150,"cliente_id":3,"parcelas":3,"primeiro_vencimento":"2026-12-15"}
+--    Pagamento: {"forma":"crediario","valor":150,"cliente_id":3,"parcelas":3,"primeiro_vencimento":"2026-12-15","juros_percentual":5}
+--    "valor" é a parte da compra paga no crediário; as parcelas somam valor + juros.
 -- ---------------------------------------------------------------------
 create or replace function public.finalizar_venda(
   p_itens             jsonb,
@@ -395,6 +405,8 @@ declare
   v_em_aberto   numeric(12, 2);
   v_pag_id      bigint;
   v_base        numeric(12, 2);
+  v_juros       numeric(6, 2) := 0;   -- % de juros do crediário (opcional)
+  v_total_cred  numeric(12, 2);       -- valor parcelado + juros = soma das parcelas
   i             integer;
 begin
   if not public.tem_acesso() then
@@ -514,6 +526,11 @@ begin
     if v_parcelas < 1 or v_parcelas > 24 then
       raise exception 'Número de parcelas deve ficar entre 1 e 24.';
     end if;
+    v_juros := round(coalesce(nullif(v_cred ->> 'juros_percentual', '')::numeric, 0), 2);
+    if v_juros < 0 or v_juros > 100 then
+      raise exception 'Juros do crediário deve ficar entre 0 e 100 por cento.';
+    end if;
+    v_total_cred := round(v_valor_cred * (1 + v_juros / 100), 2);
     v_primeiro := coalesce(nullif(v_cred ->> 'primeiro_vencimento', '')::date,
                            (now() at time zone 'America/Sao_Paulo')::date + 30);
     if v_primeiro < (now() at time zone 'America/Sao_Paulo')::date then
@@ -521,7 +538,7 @@ begin
     end if;
     if v_cliente.limite_credito is not null and not public.eh_admin() then
       select coalesce(sum(valor), 0) into v_em_aberto from public.parcelas where cliente_id = v_cliente.id and status = 'aberta';
-      if v_em_aberto + v_valor_cred > v_cliente.limite_credito then
+      if v_em_aberto + v_total_cred > v_cliente.limite_credito then
         raise exception 'Limite de crédito de "%" excedido: limite R$ %, em aberto R$ %.',
           v_cliente.nome,
           replace(to_char(v_cliente.limite_credito, 'FM999999990.00'), '.', ','),
@@ -558,11 +575,12 @@ begin
   -- Parcelas do crediário (mensais). A última absorve os centavos da divisão.
   if v_qtd_cred = 1 then
     select id into v_pag_id from public.venda_pagamentos where venda_id = v_venda.id and forma = 'crediario';
-    v_base := floor(v_valor_cred * 100 / v_parcelas) / 100;
+    update public.venda_pagamentos set juros_percentual = v_juros, valor_com_juros = v_total_cred where id = v_pag_id;
+    v_base := floor(v_total_cred * 100 / v_parcelas) / 100;
     for i in 1 .. v_parcelas loop
       insert into public.parcelas (venda_id, pagamento_id, cliente_id, numero, total_parcelas, valor, vencimento)
       values (v_venda.id, v_pag_id, v_cliente.id, i, v_parcelas,
-              case when i = v_parcelas then v_valor_cred - v_base * (v_parcelas - 1) else v_base end,
+              case when i = v_parcelas then v_total_cred - v_base * (v_parcelas - 1) else v_base end,
               (v_primeiro + make_interval(months => i - 1))::date);
     end loop;
   end if;
