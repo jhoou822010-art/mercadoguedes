@@ -59,7 +59,8 @@ loja-facil/                          (raiz do repositório)
 │       ├── 0001_inicial.sql             1º  usuários, produtos, estoque, validade
 │       ├── 0002_caixa_vendas.sql        2º  caixa, vendas, pagamentos, fiado, comprovante
 │       ├── 0003_atalhos_teclado.sql     3º  teclas de atalho do caixa
-│       └── 0004_logo_loja.sql           4º  logo da loja
+│       ├── 0004_logo_loja.sql           4º  logo da loja
+│       └── 0005_item_avulso.sql         5º  item sem cadastro no caixa
 │
 └── src/
     ├── main.tsx                     ponto de partida do sistema
@@ -196,7 +197,7 @@ Abra `github.com/SUA-CONTA/loja-facil` e confira:
 - [ ] Existe `.github/workflows/publicar.yml`.
 - [ ] **Não** existe uma pasta `loja-facil` dentro do repositório.
 - [ ] **Não** aparecem `.env`, `node_modules` nem `dist`.
-- [ ] `supabase/migrations` tem os 4 arquivos `.sql`.
+- [ ] `supabase/migrations` tem os 5 arquivos `.sql`.
 - [ ] `src/pages` tem 14 arquivos, incluindo `Caixa.tsx` e `Teclado.tsx`.
 - [ ] O repositório está **Public** (ou Private com GitHub Pro).
 - [ ] O README aparece embaixo da lista de arquivos.

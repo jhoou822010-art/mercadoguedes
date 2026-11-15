@@ -21,6 +21,7 @@ export const ACOES: AcaoTeclado[] = [
   { id: "buscar_produto", contexto: "caixa", nome: "Voltar para a busca", descricao: "Coloca o cursor no campo do leitor / busca de produto.", padrao: "F3" },
   { id: "desconto", contexto: "caixa", nome: "Desconto", descricao: "Abre a janela de desconto.", padrao: "F4" },
   { id: "calculadora", contexto: "caixa", nome: "Calculadora", descricao: "Abre a calculadora.", padrao: "F7" },
+  { id: "item_avulso", contexto: "caixa", nome: "Item avulso (sem cadastro)", descricao: "Lança um produto que não está cadastrado: descrição, preço e quantidade.", padrao: "Insert" },
   { id: "cancelar_compra", contexto: "caixa", nome: "Cancelar compra", descricao: "Limpa todos os itens da compra atual (pede confirmação).", padrao: "F8" },
   { id: "quantidade_ultimo", contexto: "caixa", nome: "Alterar quantidade", descricao: "Vai para a quantidade do último produto passado.", padrao: "F9" },
   { id: "mais_um", contexto: "caixa", nome: "Mais 1 do último item", descricao: "Soma 1 unidade ao último produto passado.", padrao: "NumpadAdd" },

@@ -43,6 +43,8 @@ export default function Configuracoes() {
   const [logo, setLogo] = useState<string | null>(null);
   const [logoNoComprovante, setLogoNoComprovante] = useState(true);
   const [processandoLogo, setProcessandoLogo] = useState(false);
+  const [permitirAvulso, setPermitirAvulso] = useState(true);
+  const semColunaAvulso = config !== null && config.permitir_item_avulso === undefined;
   // A coluna "logo" só existe depois de rodar o SQL 0004.
   const semColunaLogo = config !== null && config.logo === undefined;
 
@@ -58,6 +60,7 @@ export default function Configuracoes() {
     setDescMax(String(config.desconto_maximo_percentual ?? 100).replace(".", ","));
     setLogo(config.logo ?? null);
     setLogoNoComprovante(config.logo_no_comprovante ?? true);
+    setPermitirAvulso(config.permitir_item_avulso ?? true);
   }, [config]);
 
   async function escolherLogo(arquivo: File | undefined) {
@@ -111,6 +114,7 @@ export default function Configuracoes() {
       mensagem_comprovante: mensagem.trim(),
       desconto_maximo_percentual: desc,
       ...(semColunaLogo ? {} : { logo, logo_no_comprovante: logoNoComprovante }),
+      ...(semColunaAvulso ? {} : { permitir_item_avulso: permitirAvulso }),
       atualizado_em: new Date().toISOString(),
     }).eq("id", 1);
     setSalvando(false);
@@ -218,6 +222,17 @@ export default function Configuracoes() {
             <input id="dmax" className="campo" inputMode="decimal" value={descMax} onChange={(e) => setDescMax(e.target.value)} />
             <p className="mt-1 text-xs text-slate-400">100 = sem limite. O administrador nunca tem limite.</p>
           </div>
+          {semColunaAvulso ? (
+            <p className="text-xs text-slate-500">Item sem cadastro no caixa: rode o SQL <code>0005_item_avulso.sql</code> no Supabase para ativar.</p>
+          ) : (
+            <label className="flex items-start gap-2 text-sm">
+              <input type="checkbox" className="mt-0.5 h-4 w-4 accent-petroleo-700" checked={permitirAvulso} onChange={(e) => setPermitirAvulso(e.target.checked)} />
+              <span>
+                Operador pode lançar <strong>item sem cadastro</strong> no caixa
+                <span className="block text-xs text-slate-400">A balconista digita descrição e preço. O administrador sempre pode.</span>
+              </span>
+            </label>
+          )}
           <button className="btn-primario w-full" disabled={salvando}>{salvando ? "Salvando…" : "Salvar"}</button>
         </form>
 

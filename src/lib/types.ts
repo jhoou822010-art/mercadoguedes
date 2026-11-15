@@ -73,6 +73,8 @@ export interface Configuracoes {
   /** Logo da loja como data URL (migração 0004). */
   logo?: string | null;
   logo_no_comprovante?: boolean;
+  /** Se operadores podem vender item avulso (migração 0005). Ausente = SQL 0005 não rodado. */
+  permitir_item_avulso?: boolean;
 }
 
 export interface ResumoPainel {
@@ -134,6 +136,8 @@ export interface VendaItem {
   quantidade: number;
   preco_unitario: number;
   total: number;
+  /** Item vendido sem cadastro (migração 0005). */
+  avulso?: boolean;
 }
 
 export interface VendaPagamento {

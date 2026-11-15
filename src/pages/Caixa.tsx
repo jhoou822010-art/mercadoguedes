@@ -76,7 +76,18 @@ function AbrirCaixa({ onAberto }: { onAberto: (c: TCaixa) => void }) {
 
 /* ------------------------- Ponto de venda ------------------------- */
 
-interface ItemCarrinho { p: ProdutoView; qtd: string }
+interface ItemCarrinho { p: ProdutoView; qtd: string; avulso?: boolean }
+
+/** Monta um "produto" de mentira para um item avulso (sem cadastro). Id negativo = nunca existe no banco. */
+function produtoAvulso(descricao: string, preco: number): ProdutoView {
+  const agora = new Date().toISOString();
+  return {
+    id: -Date.now() - Math.floor(Math.random() * 1000), codigo: "AVULSO", barras: null, nome: descricao, categoria: null,
+    unidade: "UN", modelo: null, fornecedor: null, custo: 0, preco, estoque: 1e9, estoque_minimo: 0, validade: null,
+    ativo: true, criado_em: agora, atualizado_em: agora, valor_estoque: 0, abaixo_minimo: false,
+    dias_para_vencer: null, situacao_validade: "sem_validade",
+  };
+}
 type Desconto = { tipo: "valor" | "percentual"; valor: string };
 
 function chaveCarrinho(caixaId: number) { return `lojafacil.carrinho.${caixaId}`; }
@@ -97,7 +108,7 @@ function PontoDeVenda({ caixa, onFechado }: { caixa: TCaixa; onFechado: () => vo
   const inicial = useMemo(() => lerCarrinho(caixa.id), [caixa.id]);
   const [itens, setItens] = useState<ItemCarrinho[]>(inicial.itens);
   const [desconto, setDesconto] = useState<Desconto>(inicial.desconto);
-  const [janela, setJanela] = useState<"" | "pagamento" | "desconto" | "limpar" | "sangria" | "suprimento" | "fechar" | "calculadora" | "atalhos">("");
+  const [janela, setJanela] = useState<"" | "pagamento" | "desconto" | "limpar" | "sangria" | "suprimento" | "fechar" | "calculadora" | "atalhos" | "avulso">("");
   const teclas = useMemo(() => mapaAtalhos(config?.atalhos), [config?.atalhos]);
   const [comprovante, setComprovante] = useState<VendaCompleta | null>(null);
   const busca = useRef<HTMLInputElement>(null);
@@ -112,9 +123,9 @@ function PontoDeVenda({ caixa, onFechado }: { caixa: TCaixa; onFechado: () => vo
 
   const linhas = itens.map((i) => {
     const q = lerNumero(i.qtd);
-    const invalida = Number.isNaN(q) || q <= 0 || (INTEIRAS.includes(i.p.unidade) && !Number.isInteger(q));
+    const invalida = Number.isNaN(q) || q <= 0 || (!i.avulso && INTEIRAS.includes(i.p.unidade) && !Number.isInteger(q));
     const total = invalida ? 0 : centavos(Number(i.p.preco) * q);
-    return { ...i, q, invalida, total, semEstoque: !invalida && q > Number(i.p.estoque) };
+    return { ...i, q, invalida, total, semEstoque: !i.avulso && !invalida && q > Number(i.p.estoque) };
   });
   const subtotal = centavos(linhas.reduce((s, l) => s + l.total, 0));
   const descNum = desconto.valor.trim() ? lerNumero(desconto.valor) : 0;
@@ -150,17 +161,34 @@ function PontoDeVenda({ caixa, onFechado }: { caixa: TCaixa; onFechado: () => vo
     if (!itens.length) return avisar("info", "Passe pelo menos um produto.");
     if (!podePagar) return avisar("erro", erroDesconto || "Confira os itens marcados em vermelho.");
     // Confere preço e estoque atuais antes de cobrar.
-    const { data } = await supabase.from("vw_produtos").select("*").in("id", itens.map((i) => i.p.id));
+    const ids = itens.filter((i) => !i.avulso).map((i) => i.p.id);
+    const { data } = ids.length ? await supabase.from("vw_produtos").select("*").in("id", ids) : { data: [] };
     const atuais = new Map(((data ?? []) as ProdutoView[]).map((p) => [p.id, p]));
     const mudou = itens.some((i) => {
       const a = atuais.get(i.p.id);
-      return a && (Number(a.preco) !== Number(i.p.preco) || Number(a.estoque) !== Number(i.p.estoque));
+      return !i.avulso && a && (Number(a.preco) !== Number(i.p.preco) || Number(a.estoque) !== Number(i.p.estoque));
     });
     if (mudou) {
-      setItens((x) => x.map((i) => ({ ...i, p: atuais.get(i.p.id) ?? i.p })));
+      setItens((x) => x.map((i) => (i.avulso ? i : { ...i, p: atuais.get(i.p.id) ?? i.p })));
       return avisar("info", "Preço ou estoque de algum item mudou. Confira os valores e aperte F2 de novo.");
     }
     setJanela("pagamento");
+  }
+
+  // Item avulso: produto sem cadastro, com descrição, preço e quantidade digitados.
+  const avulsoLiberado = ehAdmin || config?.permitir_item_avulso !== false;
+  function abrirAvulso() {
+    if (config && config.permitir_item_avulso === undefined) {
+      return avisar("erro", "Para usar item sem cadastro, o administrador precisa rodar o SQL 0005_item_avulso.sql no Supabase.");
+    }
+    if (!avulsoLiberado) return avisar("erro", "Item sem cadastro não está liberado para operador. Peça ao administrador.");
+    setJanela("avulso");
+  }
+  function adicionarAvulso(descricao: string, preco: number, quantidade: number) {
+    setItens((x) => [...x, { p: produtoAvulso(descricao, preco), qtd: String(quantidade).replace(".", ","), avulso: true }]);
+    setJanela("");
+    avisar("info", `“${descricao}” adicionado (item sem cadastro).`);
+    focarBusca();
   }
 
   // Mexe na quantidade do último produto passado.
@@ -183,6 +211,7 @@ function PontoDeVenda({ caixa, onFechado }: { caixa: TCaixa; onFechado: () => vo
     buscar_produto: focarBusca,
     desconto: () => itens.length && setJanela("desconto"),
     calculadora: () => setJanela("calculadora"),
+    item_avulso: () => abrirAvulso(),
     cancelar_compra: () => itens.length && setJanela("limpar"),
     quantidade_ultimo: () => {
       const u = itens[itens.length - 1];
@@ -254,7 +283,7 @@ function PontoDeVenda({ caixa, onFechado }: { caixa: TCaixa; onFechado: () => vo
                   <div className="order-1 min-w-0 sm:order-2 sm:flex-1">
                     <p className="truncate font-medium">{l.p.nome}</p>
                     <p className="text-xs text-slate-500">
-                      {fmtMoeda(l.p.preco)} / {l.p.unidade} · cód. {l.p.codigo}
+                      {fmtMoeda(l.p.preco)} / {l.p.unidade} · {l.avulso ? <span className="font-semibold text-acao-700">sem cadastro</span> : <>cód. {l.p.codigo}</>}
                       {l.semEstoque && <span className="ml-1 font-semibold text-critico-700">· estoque: {fmtQtd(l.p.estoque, l.p.unidade)}</span>}
                       {l.invalida && l.qtd !== "" && <span className="ml-1 font-semibold text-critico-700">· quantidade inválida</span>}
                     </p>
@@ -302,6 +331,11 @@ function PontoDeVenda({ caixa, onFechado }: { caixa: TCaixa; onFechado: () => vo
           </div>
           <button className="btn-acao py-4 text-lg" disabled={!podePagar} onClick={abrirPagamento}>Pagamento{rotulo(teclas, "pagamento")}</button>
           <div className="grid grid-cols-2 gap-2">
+            {avulsoLiberado && (
+              <button className="btn-secundario btn-pequeno col-span-2 border-acao-500 text-acao-700 hover:bg-orange-50" onClick={abrirAvulso}>
+                ✚ Item sem cadastro{rotulo(teclas, "item_avulso")}
+              </button>
+            )}
             <button className="btn-secundario btn-pequeno" onClick={() => setJanela("calculadora")}>🧮 Calculadora{rotulo(teclas, "calculadora")}</button>
             <button className="btn-secundario btn-pequeno" disabled={!itens.length} onClick={() => setJanela("limpar")}>Cancelar compra{rotulo(teclas, "cancelar_compra")}</button>
             <button className="btn-secundario btn-pequeno" disabled={!itens.length} onClick={() => mudarUltimo(1)}>+1 no último{rotulo(teclas, "mais_um")}</button>
@@ -325,7 +359,9 @@ function PontoDeVenda({ caixa, onFechado }: { caixa: TCaixa; onFechado: () => vo
         <JanelaPagamento
           teclas={teclas}
           total={total}
-          itens={linhas.map((l) => ({ produto_id: l.p.id, quantidade: l.q }))}
+          itens={linhas.map((l) => (l.avulso
+            ? { avulso: true as const, descricao: l.p.nome, preco: Number(l.p.preco), quantidade: l.q }
+            : { produto_id: l.p.id, quantidade: l.q }))}
           desconto={descontoValor}
           onConcluida={vendaConcluida}
           onFechar={() => { setJanela(""); focarBusca(); }}
@@ -347,6 +383,7 @@ function PontoDeVenda({ caixa, onFechado }: { caixa: TCaixa; onFechado: () => vo
       )}
 
       {janela === "calculadora" && <Calculadora onFechar={() => { setJanela(""); focarBusca(); }} />}
+      {janela === "avulso" && <JanelaAvulso onAdicionar={adicionarAvulso} onFechar={() => { setJanela(""); focarBusca(); }} />}
       {janela === "atalhos" && <JanelaAtalhos teclas={teclas} onFechar={() => { setJanela(""); focarBusca(); }} />}
 
       {janela === "fechar" && <JanelaFechamento caixa={caixa} onCancelar={() => setJanela("")} onFechado={onFechado} />}
@@ -430,7 +467,7 @@ interface Pag { forma: FormaPagamento; valor: number }
 
 function JanelaPagamento({ teclas, total, itens, desconto, onConcluida, onFechar }: {
   teclas: MapaAtalhos;
-  total: number; itens: { produto_id: number; quantidade: number }[]; desconto: number; onConcluida: (v: Venda) => void; onFechar: () => void;
+  total: number; itens: Array<{ produto_id: number; quantidade: number } | { avulso: true; descricao: string; preco: number; quantidade: number }>; desconto: number; onConcluida: (v: Venda) => void; onFechar: () => void;
 }) {
   const [pags, setPags] = useState<Pag[]>([]);
   const [forma, setForma] = useState<FormaPagamento>("dinheiro");
@@ -787,6 +824,77 @@ function JanelaAtalhos({ teclas, onFechar }: { teclas: MapaAtalhos; onFechar: ()
         {grupo("pagamento", "Na janela de pagamento")}
       </div>
       <p className="mt-4 text-xs text-slate-500">O administrador muda essas teclas em <strong>Teclado do caixa</strong>.</p>
+    </Modal>
+  );
+}
+
+/* ------------------------ Item avulso (sem cadastro) ------------------------ */
+
+function JanelaAvulso({ onAdicionar, onFechar }: { onAdicionar: (descricao: string, preco: number, quantidade: number) => void; onFechar: () => void }) {
+  const [descricao, setDescricao] = useState("");
+  const [preco, setPreco] = useState("");
+  const [qtd, setQtd] = useState("1");
+  const [erro, setErro] = useState("");
+  const [calc, setCalc] = useState(false);
+  const campoPreco = useRef<HTMLInputElement>(null);
+
+  const p = lerNumero(preco);
+  const q = lerNumero(qtd);
+  const total = !Number.isNaN(p) && !Number.isNaN(q) ? centavos(p * q) : null;
+
+  function confirmar(e: FormEvent) {
+    e.preventDefault();
+    if (Number.isNaN(p) || p <= 0) return setErro("Digite o preço (maior que zero). Ex.: 12,50");
+    if (p > 100000) return setErro("Preço muito alto. Confira o valor.");
+    if (Number.isNaN(q) || q <= 0) return setErro("Digite a quantidade (maior que zero). Ex.: 1 ou 0,350");
+    onAdicionar(descricao.trim() || "Item avulso", centavos(p), Math.round(q * 1000) / 1000);
+  }
+
+  return (
+    <Modal
+      aberto
+      titulo="Item sem cadastro"
+      largura="sm"
+      onFechar={onFechar}
+      rodape={
+        <>
+          <button className="btn-secundario" onClick={onFechar}>Cancelar</button>
+          <button className="btn-acao" form="form-avulso">Adicionar à compra (Enter)</button>
+        </>
+      }
+    >
+      <form id="form-avulso" onSubmit={confirmar} className="space-y-4">
+        <p className="text-sm text-slate-500">Para produto que não está cadastrado ou está sem código. Entra na venda e no comprovante, mas não mexe no estoque.</p>
+        <div>
+          <label className="rotulo" htmlFor="av-desc">Descrição</label>
+          <input id="av-desc" className="campo" value={descricao} onChange={(e) => setDescricao(e.target.value)} maxLength={120} autoFocus placeholder="Ex.: Bolo caseiro, verdura, saco de gelo" />
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="rotulo" htmlFor="av-preco">Preço unitário (R$)</label>
+            <div className="flex gap-1">
+              <input id="av-preco" ref={campoPreco} className="campo min-w-0 text-lg font-bold" inputMode="decimal" value={preco} onChange={(e) => { setPreco(e.target.value); setErro(""); }} placeholder="0,00" />
+              <button type="button" className="btn-secundario shrink-0 px-3" title="Calculadora" onClick={() => setCalc(true)}>🧮</button>
+            </div>
+          </div>
+          <div>
+            <label className="rotulo" htmlFor="av-qtd">Quantidade</label>
+            <input id="av-qtd" className="campo text-lg font-bold" inputMode="decimal" value={qtd} onChange={(e) => { setQtd(e.target.value); setErro(""); }} />
+          </div>
+        </div>
+        <div className="rounded-lg bg-slate-50 p-3 text-sm">
+          Total do item: <strong className="text-lg">{total !== null && total > 0 ? fmtMoeda(total) : "—"}</strong>
+          <span className="block text-xs text-slate-400">Peso: use vírgula, ex.: 0,350 kg × preço do kg.</span>
+        </div>
+        {erro && <Aviso cor="critico">{erro}</Aviso>}
+      </form>
+      {calc && (
+        <Calculadora
+          onFechar={() => { setCalc(false); setTimeout(() => campoPreco.current?.select(), 30); }}
+          onUsar={(v) => { setPreco(String(v).replace(".", ",")); setCalc(false); setErro(""); setTimeout(() => campoPreco.current?.select(), 30); }}
+          textoUsar="Usar como preço"
+        />
+      )}
     </Modal>
   );
 }
