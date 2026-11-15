@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
 import type { Session } from "@supabase/supabase-js";
-import { supabase } from "../lib/supabase";
+import { supabase, mensagemErro } from "../lib/supabase";
 import type { Configuracoes, Perfil } from "../lib/types";
 
 interface AuthValor {
@@ -8,6 +8,8 @@ interface AuthValor {
   perfil: Perfil | null;
   config: Configuracoes | null;
   carregando: boolean;
+  /** Mensagem quando o login funcionou mas o perfil não pôde ser carregado. */
+  erroPerfil: string;
   ehAdmin: boolean;
   recarregar: () => Promise<void>;
   sair: () => Promise<void>;
@@ -20,14 +22,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [perfil, setPerfil] = useState<Perfil | null>(null);
   const [config, setConfig] = useState<Configuracoes | null>(null);
   const [carregando, setCarregando] = useState(true);
+  const [erroPerfil, setErroPerfil] = useState("");
 
   const carregarPerfil = useCallback(async (s: Session | null) => {
     if (!s) {
       setPerfil(null);
       setConfig(null);
+      setErroPerfil("");
       return;
     }
-    const { data } = await supabase.from("perfis").select("*").eq("id", s.user.id).maybeSingle();
+    const { data, error } = await supabase.from("perfis").select("*").eq("id", s.user.id).maybeSingle();
+    if (error) {
+      // Ex.: tabela inexistente (SQL 0001 não rodado neste projeto) ou chave errada.
+      setErroPerfil(`Erro ao ler o perfil: ${mensagemErro(error)}${error.code ? ` (código ${error.code})` : ""}`);
+    } else if (!data) {
+      setErroPerfil("Seu login funcionou, mas não existe perfil para este usuário na tabela “perfis”.");
+    } else {
+      setErroPerfil("");
+    }
     setPerfil((data as Perfil) ?? null);
     const { data: cfg } = await supabase.from("configuracoes").select("*").eq("id", 1).maybeSingle();
     setConfig((cfg as Configuracoes) ?? null);
@@ -52,6 +64,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     perfil,
     config,
     carregando,
+    erroPerfil,
     ehAdmin: perfil?.papel === "admin",
     recarregar: () => carregarPerfil(sessao),
     sair: async () => {

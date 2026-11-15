@@ -5,6 +5,7 @@ import { Layout } from "./components/Layout";
 import { Carregando } from "./components/Ui";
 import Login from "./pages/Login";
 import Pendente from "./pages/Pendente";
+import ErroPerfil from "./pages/ErroPerfil";
 import NaoConfigurado from "./pages/NaoConfigurado";
 import Painel from "./pages/Painel";
 import Produtos from "./pages/Produtos";
@@ -18,12 +19,12 @@ import Vendas from "./pages/Vendas";
 import Teclado from "./pages/Teclado";
 
 export default function App() {
-  const { sessao, perfil, carregando, ehAdmin } = useAuth();
+  const { sessao, perfil, carregando, ehAdmin, erroPerfil } = useAuth();
 
   if (!supabaseConfigurado) return <NaoConfigurado />;
   if (carregando) return <Carregando texto="Abrindo o Loja Fácil…" />;
   if (!sessao) return <Login />;
-  if (!perfil) return <Carregando texto="Carregando seu perfil…" />;
+  if (!perfil) return erroPerfil ? <ErroPerfil /> : <Carregando texto="Carregando seu perfil…" />;
   if (perfil.papel === "pendente") return <Pendente />;
 
   return (
