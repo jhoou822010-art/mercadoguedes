@@ -1,4 +1,5 @@
-import { useEffect, useId, type ReactNode } from "react";
+import { useEffect, useId, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 
 /** Pilha de janelas abertas: o Esc fecha só a que está por cima. */
 const pilha: string[] = [];
@@ -16,9 +17,12 @@ const LARGURA = { sm: "max-w-md", md: "max-w-lg", lg: "max-w-2xl", xl: "max-w-4x
 
 export function Modal({ aberto, titulo, onFechar, children, rodape, largura = "md" }: Props) {
   const id = useId();
+  // Camada: cada janela aberta por cima de outra fica um degrau acima (nunca por baixo).
+  const [camada, setCamada] = useState(0);
   useEffect(() => {
     if (!aberto) return;
     pilha.push(id);
+    setCamada(pilha.length);
     document.body.style.overflow = "hidden";
     return () => {
       const i = pilha.lastIndexOf(id);
@@ -39,13 +43,19 @@ export function Modal({ aberto, titulo, onFechar, children, rodape, largura = "m
   }, [aberto, onFechar, id]);
 
   if (!aberto) return null;
-  return (
-    <div className="nao-imprimir fixed inset-0 z-40 flex items-end justify-center bg-slate-900/50 sm:items-center sm:p-4" onMouseDown={onFechar}>
+  // A janela é desenhada direto no <body> (portal), fora de qualquer outra tela ou janela,
+  // para não ser cortada nem ficar escondida atrás de outra.
+  return createPortal(
+    <div
+      className="nao-imprimir fixed inset-0 flex items-end justify-center bg-slate-900/50 sm:items-center sm:p-4"
+      style={{ zIndex: 40 + Math.max(camada, 1) * 2 }}
+      onMouseDown={onFechar}
+    >
       <div
         role="dialog"
         aria-modal="true"
         aria-label={titulo}
-        className={`flex max-h-[92vh] w-full ${LARGURA[largura]} flex-col rounded-t-2xl bg-white shadow-xl sm:rounded-2xl`}
+        className={`flex max-h-[92vh] max-h-[92dvh] w-full ${LARGURA[largura]} flex-col rounded-t-2xl bg-white shadow-xl sm:rounded-2xl`}
         onMouseDown={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
@@ -57,7 +67,8 @@ export function Modal({ aberto, titulo, onFechar, children, rodape, largura = "m
         <div className="flex-1 overflow-y-auto px-5 py-4">{children}</div>
         {rodape && <div className="flex flex-wrap justify-end gap-2 border-t border-slate-200 px-5 py-3">{rodape}</div>}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 

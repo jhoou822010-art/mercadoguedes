@@ -475,6 +475,12 @@ function JanelaPagamento({ teclas, total, itens, desconto, onConcluida, onFechar
 }) {
   const [pags, setPags] = useState<Pag[]>([]);
   const [forma, setForma] = useState<FormaPagamento>("dinheiro");
+  // Pix e crediário mostram mais coisas embaixo: rola a janela para elas ficarem à vista.
+  useEffect(() => {
+    if (forma !== "pix" && forma !== "crediario") return;
+    const t = setTimeout(() => document.getElementById("pag-extra")?.scrollIntoView({ block: "nearest", behavior: "smooth" }), 80);
+    return () => clearTimeout(t);
+  }, [forma]);
   const [valor, setValor] = useState(String(total).replace(".", ","));
   const [cliente, setCliente] = useState("");
   const [telefone, setTelefone] = useState("");
@@ -628,6 +634,7 @@ function JanelaPagamento({ teclas, total, itens, desconto, onConcluida, onFechar
               )}
               {(forma === "debito" || forma === "credito") && <p className="mt-2 text-xs text-slate-500">Passe o cartão na maquininha e confirme aqui depois de aprovado.</p>}
             </div>
+            <div id="pag-extra" className="space-y-3">
             {forma === "pix" && (() => {
               const v = centavos(lerNumero(valor));
               const codigo = !Number.isNaN(v) && v > 0 ? pixDaLoja(cfgLoja, v) : null;
@@ -688,6 +695,7 @@ function JanelaPagamento({ teclas, total, itens, desconto, onConcluida, onFechar
                 })()}
               </div>
             )}
+            </div>
           </>
         )}
 

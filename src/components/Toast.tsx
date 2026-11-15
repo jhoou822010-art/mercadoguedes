@@ -23,7 +23,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   return (
     <ToastCtx.Provider value={avisar}>
       {children}
-      <div className="nao-imprimir pointer-events-none fixed inset-x-0 bottom-4 z-50 flex flex-col items-center gap-2 px-4 lg:bottom-6 lg:items-end">
+      <div className="nao-imprimir pointer-events-none fixed inset-x-0 top-3 z-[100] flex flex-col items-center gap-2 px-4 lg:top-4 lg:right-4 lg:left-auto lg:items-end">
         {avisos.map((a) => (
           <div
             key={a.id}
