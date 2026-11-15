@@ -4,9 +4,10 @@ import { termoBusca } from "../lib/data";
 import { fmtMoeda } from "../lib/format";
 import type { Cliente } from "../lib/types";
 import { Aviso } from "./Ui";
+import { CampoDocumento, erroDocumento } from "./CampoDocumento";
 
 /**
- * Escolher um cliente cadastrado (crediário). Busca por nome, telefone ou CPF
+ * Escolher um cliente cadastrado (crediário). Busca por nome, telefone, CPF ou CNPJ
  * e permite cadastrar um cliente novo sem sair da venda.
  */
 export function ClienteSeletor({ escolhido, onEscolher }: { escolhido: Cliente | null; onEscolher: (c: Cliente | null) => void }) {
@@ -42,12 +43,14 @@ export function ClienteSeletor({ escolhido, onEscolher }: { escolhido: Cliente |
   async function cadastrar() {
     setErro("");
     if (nome.trim().length < 2) return setErro("Informe o nome do cliente.");
+    const errDoc = erroDocumento(cpf);
+    if (errDoc) return setErro(errDoc);
     setSalvando(true);
     const { data, error } = await supabase.from("clientes")
       .insert({ nome: nome.trim(), telefone: telefone.trim() || null, cpf: cpf.trim() || null })
       .select("*").single();
     setSalvando(false);
-    if (error) return setErro(error.code === "23505" ? "Já existe um cliente com este CPF." : mensagemErro(error));
+    if (error) return setErro(error.code === "23505" ? "Já existe um cliente com este CPF/CNPJ." : mensagemErro(error));
     onEscolher(data as Cliente);
     setNovo(false); setNome(""); setTelefone(""); setCpf(""); setTexto("");
   }
@@ -57,7 +60,7 @@ export function ClienteSeletor({ escolhido, onEscolher }: { escolhido: Cliente |
       <div className="flex items-start justify-between gap-3 rounded-lg border border-petroleo-200 bg-petroleo-50 p-3 text-sm">
         <div>
           <p className="font-semibold">{escolhido.nome}</p>
-          <p className="text-xs text-slate-500">{[escolhido.telefone, escolhido.cpf && `CPF ${escolhido.cpf}`].filter(Boolean).join(" · ") || "sem telefone"}</p>
+          <p className="text-xs text-slate-500">{[escolhido.telefone, escolhido.cpf && `${escolhido.cpf.replace(/\D/g, "").length === 14 ? "CNPJ" : "CPF"} ${escolhido.cpf}`].filter(Boolean).join(" · ") || "sem telefone"}</p>
           <p className="mt-1 text-xs">
             Em aberto no crediário: <strong>{emAberto === null ? "…" : fmtMoeda(emAberto)}</strong>
             {escolhido.limite_credito !== null && <> · Limite: <strong>{fmtMoeda(escolhido.limite_credito)}</strong></>}
@@ -72,7 +75,7 @@ export function ClienteSeletor({ escolhido, onEscolher }: { escolhido: Cliente |
     <div className="space-y-2">
       {!novo ? (
         <>
-          <input className="campo" placeholder="Buscar cliente por nome, telefone ou CPF" value={texto} onChange={(e) => setTexto(e.target.value)} aria-label="Buscar cliente" />
+          <input className="campo" placeholder="Buscar cliente por nome, telefone, CPF ou CNPJ" value={texto} onChange={(e) => setTexto(e.target.value)} aria-label="Buscar cliente" />
           {lista.length > 0 && (
             <ul className="max-h-48 divide-y divide-slate-100 overflow-y-auto rounded-lg border border-slate-200">
               {lista.map((c) => (
@@ -94,7 +97,7 @@ export function ClienteSeletor({ escolhido, onEscolher }: { escolhido: Cliente |
           <input className="campo" placeholder="Nome completo *" value={nome} onChange={(e) => setNome(e.target.value)} autoFocus aria-label="Nome do cliente" />
           <div className="grid grid-cols-2 gap-2">
             <input className="campo" placeholder="Telefone" inputMode="tel" value={telefone} onChange={(e) => setTelefone(e.target.value)} aria-label="Telefone" />
-            <input className="campo" placeholder="CPF (opcional)" inputMode="numeric" value={cpf} onChange={(e) => setCpf(e.target.value)} aria-label="CPF" />
+            <CampoDocumento valor={cpf} onMudar={(v) => { setCpf(v); setErro(""); }} placeholder="CPF ou CNPJ (opcional)" />
           </div>
           {erro && <Aviso cor="critico">{erro}</Aviso>}
           <div className="flex gap-2">

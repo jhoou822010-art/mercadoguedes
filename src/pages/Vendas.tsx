@@ -3,13 +3,14 @@ import { useSearchParams } from "react-router-dom";
 import { supabase, mensagemErro } from "../lib/supabase";
 import { baixarCsv, hojeArquivo } from "../lib/csv";
 import { COLUNAS_CAIXA, selecaoVenda } from "../lib/consultas";
-import { diasAte, fmtData, fmtDataHora, fmtMoeda, hojeISO, lerNumero, NOME_FORMA, numParaCampo } from "../lib/format";
+import { diasAte, fmtData, fmtDataHora, fmtMoeda, hojeISO, lerNumero, mascaraDocumento, NOME_FORMA, numParaCampo } from "../lib/format";
 import { FORMAS_RECEBIMENTO, type Caixa, type Cliente, type FormaPagamento, type Parcela, type ResumoCaixa, type VendaCompleta, type VendaPagamento } from "../lib/types";
 import { useAuth } from "../contexts/AuthContext";
 import { useToast } from "../components/Toast";
 import { Modal } from "../components/Modal";
 import { CupomCarne, CupomExtrato, CupomFechamento, CupomVenda, JanelaComprovante } from "../components/Comprovante";
 import { Aviso, Cabecalho, Carregando, Selo, Vazio } from "../components/Ui";
+import { CampoDocumento, erroDocumento } from "../components/CampoDocumento";
 
 type Aba = "vendas" | "fiado" | "crediario" | "clientes" | "caixas";
 const ABAS: { id: Aba; rotulo: string }[] = [
@@ -545,7 +546,7 @@ function ListaClientes() {
   return (
     <>
       <div className="nao-imprimir mb-4 flex flex-wrap items-center gap-2">
-        <input className="campo w-64 py-1.5 text-sm" placeholder="Buscar por nome, telefone ou CPF" value={busca} onChange={(e) => setBusca(e.target.value)} aria-label="Buscar cliente" />
+        <input className="campo w-64 py-1.5 text-sm" placeholder="Buscar por nome, telefone, CPF ou CNPJ" value={busca} onChange={(e) => setBusca(e.target.value)} aria-label="Buscar cliente" />
         <label className="flex items-center gap-2 text-sm"><input type="checkbox" className="accent-petroleo-700" checked={mostrarInativos} onChange={(e) => setMostrarInativos(e.target.checked)} /> Mostrar inativos</label>
         <span className="flex-1" />
         <button className="btn-secundario btn-pequeno" disabled={!visiveis.length} onClick={() => window.print()}>🖨 Imprimir lista</button>
@@ -557,7 +558,7 @@ function ListaClientes() {
         {!clientes ? <Carregando /> : visiveis.length === 0 ? <Vazio titulo="Nenhum cliente cadastrado ainda." /> : (
           <div className="overflow-x-auto">
             <table className="tabela">
-              <thead><tr><th>Nome</th><th>Telefone</th><th>CPF</th><th className="text-right">Limite</th><th className="text-right">Em aberto</th><th className="nao-imprimir"></th></tr></thead>
+              <thead><tr><th>Nome</th><th>Telefone</th><th>CPF/CNPJ</th><th className="text-right">Limite</th><th className="text-right">Em aberto</th><th className="nao-imprimir"></th></tr></thead>
               <tbody>
                 {visiveis.map((c) => {
                   const aberto = abertoPorCliente[c.id] ?? 0;
@@ -614,7 +615,7 @@ function JanelaCliente({ cliente, ehAdmin, onFechar, onSalvo }: { cliente: Clien
   const avisar = useToast();
   const [nome, setNome] = useState(cliente?.nome ?? "");
   const [telefone, setTelefone] = useState(cliente?.telefone ?? "");
-  const [cpf, setCpf] = useState(cliente?.cpf ?? "");
+  const [cpf, setCpf] = useState(cliente?.cpf ? mascaraDocumento(cliente.cpf) : "");
   const [endereco, setEndereco] = useState(cliente?.endereco ?? "");
   const [limite, setLimite] = useState(cliente?.limite_credito != null ? numParaCampo(cliente.limite_credito) : "");
   const [obs, setObs] = useState(cliente?.observacao ?? "");
@@ -626,6 +627,8 @@ function JanelaCliente({ cliente, ehAdmin, onFechar, onSalvo }: { cliente: Clien
     e.preventDefault();
     setErro("");
     if (nome.trim().length < 2) return setErro("Informe o nome do cliente.");
+    const errDoc = erroDocumento(cpf);
+    if (errDoc) return setErro(errDoc);
     let lim: number | null = null;
     if (limite.trim()) {
       lim = lerNumero(limite);
@@ -641,7 +644,7 @@ function JanelaCliente({ cliente, ehAdmin, onFechar, onSalvo }: { cliente: Clien
       ? await supabase.from("clientes").update(dados).eq("id", cliente.id)
       : await supabase.from("clientes").insert(dados);
     setSalvando(false);
-    if (error) return setErro(error.code === "23505" ? "Já existe um cliente com este CPF." : mensagemErro(error));
+    if (error) return setErro(error.code === "23505" ? "Já existe um cliente com este CPF/CNPJ." : mensagemErro(error));
     avisar("sucesso", cliente ? "Cliente atualizado." : "Cliente cadastrado.");
     onSalvo();
   }
@@ -659,8 +662,8 @@ function JanelaCliente({ cliente, ehAdmin, onFechar, onSalvo }: { cliente: Clien
           <input id="c-tel" className="campo" inputMode="tel" value={telefone} onChange={(e) => setTelefone(e.target.value)} maxLength={30} />
         </div>
         <div>
-          <label className="rotulo" htmlFor="c-cpf">CPF</label>
-          <input id="c-cpf" className="campo" inputMode="numeric" value={cpf} onChange={(e) => setCpf(e.target.value)} maxLength={20} />
+          <label className="rotulo" htmlFor="c-cpf">CPF ou CNPJ</label>
+          <CampoDocumento id="c-cpf" valor={cpf} onMudar={(v) => { setCpf(v); setErro(""); }} />
         </div>
         <div className="sm:col-span-2">
           <label className="rotulo" htmlFor="c-end">Endereço</label>
