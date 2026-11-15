@@ -63,3 +63,32 @@ export function abrirCaixaEmJanela() {
 
 /** Esta aba é a janela separada do caixa? */
 export const ehJanelaDoCaixa = () => window.name === JANELA_CAIXA;
+
+const MSG_FIXAR = "lojafacil:fixar-caixa";
+
+/**
+ * Na janela separada: devolve o caixa para a janela principal e fecha esta.
+ * Se a principal já foi fechada, esta janela vira a principal (com menu).
+ */
+export function fixarCaixaNaPrincipal() {
+  const principal = window.opener as Window | null;
+  if (principal && !principal.closed) {
+    try {
+      principal.postMessage({ tipo: MSG_FIXAR }, window.location.origin);
+      principal.focus();
+      window.close();
+      return;
+    } catch { /* segue abaixo */ }
+  }
+  window.name = "";
+  window.location.reload();
+}
+
+/** Na janela principal: quando a separada pede, volta para o caixa. */
+export function ouvirFixarCaixa(irParaCaixa: () => void) {
+  const ouvir = (e: MessageEvent) => {
+    if (e.origin === window.location.origin && e.data?.tipo === MSG_FIXAR) irParaCaixa();
+  };
+  window.addEventListener("message", ouvir);
+  return () => window.removeEventListener("message", ouvir);
+}

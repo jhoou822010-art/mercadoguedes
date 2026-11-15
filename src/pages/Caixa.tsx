@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { useNavigate } from "react-router-dom";
 import { supabase, mensagemErro } from "../lib/supabase";
 import { centavos, dividirParcelas, fmtData, fmtDataHora, fmtMoeda, fmtQtd, hojeISO, lerNumero, NOME_FORMA, somarMeses } from "../lib/format";
 import { FORMAS, type Cliente, type Caixa as TCaixa, type FormaPagamento, type ProdutoView, type ResumoCaixa, type Venda, type VendaCompleta } from "../lib/types";
@@ -9,7 +10,7 @@ import { ProdutoBusca } from "../components/ProdutoBusca";
 import { CupomFechamento, CupomVenda, JanelaComprovante } from "../components/Comprovante";
 import { Aviso, Cabecalho, Carregando } from "../components/Ui";
 import { ativarCalculadora, Calculadora } from "../components/Calculadora";
-import { abrirCaixaEmJanela, chaveCarrinho, ehJanelaDoCaixa, gravarCarrinho, lerCarrinhoGuardado } from "../lib/carrinho";
+import { abrirCaixaEmJanela, chaveCarrinho, ehJanelaDoCaixa, fixarCaixaNaPrincipal, gravarCarrinho, lerCarrinhoGuardado } from "../lib/carrinho";
 import { ClienteSeletor } from "../components/ClienteSeletor";
 import { COLUNAS_CAIXA, selecaoVenda } from "../lib/consultas";
 import { pixDaLoja } from "../lib/pix";
@@ -117,6 +118,7 @@ function PontoDeVenda({ caixa, onFechado }: { caixa: TCaixa; onFechado: () => vo
 
   // Guarda a compra no navegador: trocar de menu, recarregar ou faltar energia não perde nada.
   const { perfil } = useAuth();
+  const navegar = useNavigate();
   useEffect(() => {
     gravarCarrinho(caixa.id, { itens, desconto, usuario_id: perfil?.id });
   }, [itens, desconto, caixa.id, perfil?.id]);
@@ -266,11 +268,27 @@ function PontoDeVenda({ caixa, onFechado }: { caixa: TCaixa; onFechado: () => vo
         <div>
           <h1 className="text-2xl font-bold">Caixa nº {caixa.id}</h1>
           <p className="text-sm text-slate-500">Aberto em {fmtDataHora(caixa.aberto_em)} · {caixa.usuario_nome}</p>
+          <div className="nao-imprimir mt-2">
+            {ehJanelaDoCaixa() ? (
+              <button type="button" className="btn-secundario btn-pequeno border-petroleo-300 text-petroleo-800" onClick={fixarCaixaNaPrincipal} title="Fecha esta janela e o caixa volta para a janela principal, com o menu. A compra continua a mesma.">
+                📌 Fixar na janela principal
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="btn-secundario btn-pequeno border-petroleo-300 text-petroleo-800"
+                onClick={() => {
+                  if (!abrirCaixaEmJanela()) return avisar("erro", "O navegador bloqueou a janela. Clique no aviso de pop-up do navegador e escolha “Sempre permitir” para este site.");
+                  navegar("/");
+                }}
+                title="Solta o caixa numa janela própria, que pode ser movida e mudar de tamanho. A compra continua a mesma."
+              >
+                ⧉ Soltar em janela separada
+              </button>
+            )}
+          </div>
         </div>
         <div className="flex flex-wrap gap-2">
-          {!ehJanelaDoCaixa() && (
-            <button className="btn-secundario btn-pequeno" onClick={() => { if (!abrirCaixaEmJanela()) avisar("erro", "O navegador bloqueou a janela. Permita janelas pop-up para este site."); }} title="Abre o caixa numa janela própria, que pode ser movida e mudar de tamanho. A compra continua a mesma.">⧉ Janela separada</button>
-          )}
           <button className="btn-secundario btn-pequeno" onClick={() => setJanela("atalhos")}>⌨ Atalhos{rotulo(teclas, "ajuda_atalhos")}</button>
           <button className="btn-secundario btn-pequeno" onClick={() => setJanela("suprimento")}>+ Suprimento{rotulo(teclas, "suprimento")}</button>
           <button className="btn-secundario btn-pequeno" onClick={() => setJanela("sangria")}>− Sangria{rotulo(teclas, "sangria")}</button>

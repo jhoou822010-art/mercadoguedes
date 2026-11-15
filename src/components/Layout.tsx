@@ -1,12 +1,12 @@
 import { Suspense, useEffect, useState } from "react";
-import { NavLink, Outlet, useLocation } from "react-router-dom";
+import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import { MeuPerfil } from "./MeuPerfil";
 import { LOGO_PADRAO } from "../lib/marca";
 import { Carregando } from "./Ui";
 import { SemConexao } from "./SemConexao";
 import { InstalarApp } from "./InstalarApp";
-import { abrirCaixaEmJanela, comprasEmAndamento, ehJanelaDoCaixa, EVENTO_CARRINHO } from "../lib/carrinho";
+import { abrirCaixaEmJanela, comprasEmAndamento, ehJanelaDoCaixa, EVENTO_CARRINHO, ouvirFixarCaixa } from "../lib/carrinho";
 import { fmtMoeda } from "../lib/format";
 
 /** Aviso nas outras telas: tem compra no caixa esperando. Nada se perde. */
@@ -130,6 +130,8 @@ export function Layout() {
   const { config } = useAuth();
   const loja = config ? { nome: config.nome_loja, logo: config.logo } : null;
   useEffect(() => setMenuAberto(false), [local.pathname]);
+  const navegar = useNavigate();
+  useEffect(() => ouvirFixarCaixa(() => navegar("/caixa")), [navegar]);
   useEffect(() => {
     document.title = config?.nome_loja ? `${config.nome_loja} · Loja Fácil` : "Loja Fácil";
   }, [config?.nome_loja]);
