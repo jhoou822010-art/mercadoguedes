@@ -44,6 +44,8 @@ export default function Configuracoes() {
   const [logoNoComprovante, setLogoNoComprovante] = useState(true);
   const [processandoLogo, setProcessandoLogo] = useState(false);
   const [permitirAvulso, setPermitirAvulso] = useState(true);
+  const [ocultarValores, setOcultarValores] = useState(false);
+  const sem0006 = config !== null && config.ocultar_valores_operador === undefined;
   const semColunaAvulso = config !== null && config.permitir_item_avulso === undefined;
   // A coluna "logo" só existe depois de rodar o SQL 0004.
   const semColunaLogo = config !== null && config.logo === undefined;
@@ -61,6 +63,7 @@ export default function Configuracoes() {
     setLogo(config.logo ?? null);
     setLogoNoComprovante(config.logo_no_comprovante ?? true);
     setPermitirAvulso(config.permitir_item_avulso ?? true);
+    setOcultarValores(config.ocultar_valores_operador ?? false);
   }, [config]);
 
   async function escolherLogo(arquivo: File | undefined) {
@@ -115,6 +118,7 @@ export default function Configuracoes() {
       desconto_maximo_percentual: desc,
       ...(semColunaLogo ? {} : { logo, logo_no_comprovante: logoNoComprovante }),
       ...(semColunaAvulso ? {} : { permitir_item_avulso: permitirAvulso }),
+      ...(sem0006 ? {} : { ocultar_valores_operador: ocultarValores }),
       atualizado_em: new Date().toISOString(),
     }).eq("id", 1);
     setSalvando(false);
@@ -223,13 +227,26 @@ export default function Configuracoes() {
             <p className="mt-1 text-xs text-slate-400">100 = sem limite. O administrador nunca tem limite.</p>
           </div>
           {semColunaAvulso ? (
-            <p className="text-xs text-slate-500">Item sem cadastro no caixa: rode o SQL <code>0005_item_avulso.sql</code> no Supabase para ativar.</p>
+            <p className="text-xs text-slate-500">“Digite o produto” no caixa: rode o SQL <code>0005_item_avulso.sql</code> no Supabase para ativar.</p>
           ) : (
             <label className="flex items-start gap-2 text-sm">
               <input type="checkbox" className="mt-0.5 h-4 w-4 accent-petroleo-700" checked={permitirAvulso} onChange={(e) => setPermitirAvulso(e.target.checked)} />
               <span>
-                Operador pode lançar <strong>item sem cadastro</strong> no caixa
+                Operador pode usar <strong>“Digite o produto”</strong> (item sem cadastro) no caixa
                 <span className="block text-xs text-slate-400">A balconista digita descrição e preço. O administrador sempre pode.</span>
+              </span>
+            </label>
+          )}
+          {sem0006 ? (
+            <p className="text-xs text-slate-500">Ocultar valores / fechamento cego: rode o SQL <code>0006_crediario_clientes_ocultar.sql</code> no Supabase para ativar.</p>
+          ) : (
+            <label className="flex items-start gap-2 text-sm">
+              <input type="checkbox" className="mt-0.5 h-4 w-4 accent-petroleo-700" checked={ocultarValores} onChange={(e) => setOcultarValores(e.target.checked)} />
+              <span>
+                <strong>Ocultar valores das vendas</strong> para operadores (fechamento cego)
+                <span className="block text-xs text-slate-400">
+                  As balconistas não veem “Vendas de hoje”, “A receber”, os totais de vendas nem o valor esperado do caixa: no fechamento só digitam o que contaram. O administrador sempre vê tudo.
+                </span>
               </span>
             </label>
           )}
@@ -265,7 +282,7 @@ export default function Configuracoes() {
           </div>
           <div className="space-y-1 border-b border-slate-100 px-4 py-3 text-xs text-slate-500">
             <p><strong>Administrador:</strong> tudo — cadastra, edita preços, remove produtos, cancela vendas, vê todos os caixas, gera backup e gerencia usuários.</p>
-            <p><strong>Operador (balconista):</strong> vende no caixa, dá desconto até o limite, recebe fiado, movimenta estoque, imprime etiquetas e vê relatórios.</p>
+            <p><strong>Operador (balconista):</strong> vende no caixa, dá desconto até o limite, recebe fiado e parcelas, cadastra clientes, movimenta estoque, imprime etiquetas e vê relatórios. Não altera preços, não cancela vendas, não define limite de crédito, não mexe em usuários nem em configurações.</p>
             <p>Novos cadastros entram como <strong>aguardando liberação</strong> e não veem nada até você liberar.</p>
           </div>
           {!usuarios ? <Carregando /> : (

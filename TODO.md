@@ -40,6 +40,18 @@
 - [x] Calculadora com teclado numérico; resultado pode virar o valor recebido
 - [x] Esc fecha só a janela de cima
 
+## Quarta etapa — Revisão e crediário (branch revisao-e-melhorias, aguardando aprovação)
+
+- [x] Rotas internas com HTTP 200 no GitHub Pages (páginas <rota>.html)
+- [x] Crediário com parcelas, clientes, limite de crédito, carnê e extrato
+- [x] Fiado: imprimir lista e extrato por cliente
+- [x] Card "A receber (fiado + crediário)" no painel
+- [x] Ocultar valores para operadores + fechamento cego (garantido no banco)
+- [x] "Item sem cadastro" renomeado para "Digite o produto"
+- [x] Importar/exportar/imprimir planilha de produtos
+- [x] Telas carregadas sob demanda (site 18% mais leve) e aviso de "Sem internet"
+- [ ] Discutir: proteção da troca de senha (Meu perfil)
+
 ## Antes de publicar — perguntas para o responsável (item 14 do prompt)
 
 1. O nome final continuará sendo Loja Fácil?

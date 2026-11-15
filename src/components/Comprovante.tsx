@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { createPortal } from "react-dom";
-import type { Configuracoes, ResumoCaixa, VendaCompleta, FormaPagamento } from "../lib/types";
-import { fmtDataHora, fmtMoeda, fmtQtd, NOME_FORMA } from "../lib/format";
+import type { Configuracoes, ResumoCaixa, VendaCompleta, FormaPagamento, Parcela } from "../lib/types";
+import { fmtData, fmtDataHora, fmtMoeda, fmtQtd, NOME_FORMA } from "../lib/format";
 import { imprimirCupom, larguraCupom, salvarLarguraCupom } from "../lib/imprimir";
 import { Modal } from "./Modal";
 import { LOGO_PADRAO } from "../lib/marca";
@@ -60,7 +60,18 @@ export function CupomVenda({ venda, config, largura }: { venda: VendaCompleta; c
           <hr />
           <div>Cliente: {venda.cliente_nome}</div>
           {venda.cliente_telefone && <div>Telefone: {venda.cliente_telefone}</div>}
-          {venda.venda_pagamentos.some((p) => p.forma === "fiado") && (
+          {venda.parcelas && venda.parcelas.length > 0 && (
+            <div style={{ marginTop: 4 }}>
+              <div style={{ fontWeight: 700 }}>Crediário em {venda.parcelas[0].total_parcelas}x</div>
+              {[...venda.parcelas].sort((a, b) => a.numero - b.numero).map((p) => (
+                <div key={p.id} className="linha">
+                  <span>{p.numero}/{p.total_parcelas} · vence {fmtData(p.vencimento)}</span>
+                  <span>{fmtMoeda(p.valor)}</span>
+                </div>
+              ))}
+            </div>
+          )}
+          {venda.venda_pagamentos.some((p) => p.forma === "fiado" || p.forma === "crediario") && (
             <div style={{ marginTop: 14 }}>
               <div>Assinatura: _______________________</div>
             </div>
@@ -83,6 +94,29 @@ export function CupomFechamento({ r, config, largura, contado, diferenca, observ
   const linha = (rotulo: string, valor: number, negrito = false) => (
     <div className="linha" style={negrito ? { fontWeight: 700 } : undefined}><span>{rotulo}</span><span>{fmtMoeda(valor)}</span></div>
   );
+  if (r.oculto) {
+    // Fechamento cego: a balconista só vê/imprime o que contou.
+    return (
+      <div className={`cupom ${largura === "58" ? "cupom-58" : ""}`}>
+        <CabecalhoLoja config={config} />
+        <hr />
+        <div className="centro" style={{ fontWeight: 700 }}>{r.status === "fechado" ? "FECHAMENTO DE CAIXA" : "CAIXA EM ANDAMENTO"}</div>
+        <hr />
+        <div>Caixa nº {r.caixa_id} · {r.usuario_nome}</div>
+        <div>Aberto: {fmtDataHora(r.aberto_em)}</div>
+        {r.fechado_em && <div>Fechado: {fmtDataHora(r.fechado_em)}</div>}
+        <div>Vendas: {r.qtd_vendas} {r.qtd_canceladas > 0 && `(canceladas: ${r.qtd_canceladas})`}</div>
+        <hr />
+        {contado !== undefined && contado !== null && linha("Dinheiro contado", contado, true)}
+        {observacao && <div>Obs.: {observacao}</div>}
+        <div style={{ marginTop: 6, fontSize: "0.85em" }}>Conferência feita pelo administrador.</div>
+        <div style={{ marginTop: 18 }}>Entregue por: ___________________</div>
+        <div style={{ marginTop: 14 }}>Conferido por: ___________________</div>
+        <hr />
+        <div className="centro" style={{ fontSize: "0.8em" }}>Documento interno · Loja Fácil</div>
+      </div>
+    );
+  }
   return (
     <div className={`cupom ${largura === "58" ? "cupom-58" : ""}`}>
       <CabecalhoLoja config={config} />
@@ -101,6 +135,7 @@ export function CupomFechamento({ r, config, largura, contado, diferenca, observ
       <div style={{ fontWeight: 700 }}>Por forma de pagamento</div>
       {Object.entries(r.por_forma).map(([f, v]) => linha(NOME_FORMA[f as FormaPagamento] ?? f, Number(v)))}
       {r.recebimentos_fiado > 0 && linha("Fiados recebidos", r.recebimentos_fiado)}
+      {Number(r.recebimentos_crediario ?? 0) > 0 && linha("Parcelas recebidas", Number(r.recebimentos_crediario))}
       <hr />
       <div style={{ fontWeight: 700 }}>Dinheiro na gaveta</div>
       {linha("Abertura", r.valor_abertura)}
@@ -108,6 +143,7 @@ export function CupomFechamento({ r, config, largura, contado, diferenca, observ
       {linha("- Trocos", -r.trocos)}
       {linha("+ Suprimentos", r.suprimentos)}
       {r.recebimentos_fiado_dinheiro > 0 && linha("+ Fiado recebido", r.recebimentos_fiado_dinheiro)}
+      {Number(r.recebimentos_crediario_dinheiro ?? 0) > 0 && linha("+ Parcelas recebidas", Number(r.recebimentos_crediario_dinheiro))}
       {linha("- Sangrias", -r.sangrias)}
       {linha("= Esperado", r.dinheiro_esperado, true)}
       {contado !== undefined && contado !== null && (
@@ -120,6 +156,64 @@ export function CupomFechamento({ r, config, largura, contado, diferenca, observ
       <div style={{ marginTop: 18 }}>Conferido por: ___________________</div>
       <hr />
       <div className="centro" style={{ fontSize: "0.8em" }}>Documento interno · Loja Fácil</div>
+    </div>
+  );
+}
+
+/** Extrato de um cliente (fiado ou crediário) para cobrança/assinatura. */
+export function CupomExtrato({ titulo, cliente, telefone, linhas, total, config, largura, rodape }: {
+  titulo: string; cliente: string; telefone?: string | null; config: Configuracoes | null; largura: "80" | "58";
+  linhas: { descricao: string; detalhe?: string; valor: number }[]; total: number; rodape?: string;
+}) {
+  return (
+    <div className={`cupom ${largura === "58" ? "cupom-58" : ""}`}>
+      <CabecalhoLoja config={config} />
+      <hr />
+      <div className="centro" style={{ fontWeight: 700 }}>{titulo}</div>
+      <div className="centro" style={{ fontSize: "0.85em" }}>Emitido em {fmtDataHora(new Date().toISOString())}</div>
+      <hr />
+      <div>Cliente: <strong>{cliente}</strong></div>
+      {telefone && <div>Telefone: {telefone}</div>}
+      <hr />
+      {linhas.length === 0 ? <div className="centro">Nada em aberto.</div> : linhas.map((l, i) => (
+        <div key={i} style={{ marginBottom: 2 }}>
+          <div className="linha"><span>{l.descricao}</span><span>{fmtMoeda(l.valor)}</span></div>
+          {l.detalhe && <div style={{ fontSize: "0.85em" }}>&nbsp;&nbsp;{l.detalhe}</div>}
+        </div>
+      ))}
+      <hr />
+      <div className="linha" style={{ fontWeight: 700, fontSize: "1.2em" }}><span>TOTAL EM ABERTO</span><span>{fmtMoeda(total)}</span></div>
+      {rodape && <div style={{ marginTop: 4, fontSize: "0.85em" }}>{rodape}</div>}
+      <div style={{ marginTop: 18 }}>Assinatura do cliente: _____________</div>
+      <hr />
+      <div className="centro" style={{ fontSize: "0.8em" }}>Documento não fiscal · Loja Fácil</div>
+    </div>
+  );
+}
+
+/** Carnê do crediário: um canhoto por parcela, para destacar. */
+export function CupomCarne({ venda, cliente, parcelas, config, largura }: {
+  venda: { id: number; criado_em: string; total: number }; cliente: string; parcelas: Parcela[]; config: Configuracoes | null; largura: "80" | "58";
+}) {
+  const ordenadas = [...parcelas].sort((a, b) => a.numero - b.numero);
+  return (
+    <div className={`cupom ${largura === "58" ? "cupom-58" : ""}`}>
+      <CabecalhoLoja config={config} />
+      <hr />
+      <div className="centro" style={{ fontWeight: 700 }}>CARNÊ DE CREDIÁRIO</div>
+      <div className="linha"><span>Venda nº {venda.id}</span><span>{fmtDataHora(venda.criado_em)}</span></div>
+      <div>Cliente: <strong>{cliente}</strong></div>
+      <div className="linha"><span>Total parcelado</span><span>{fmtMoeda(ordenadas.reduce((s, p) => s + Number(p.valor), 0))}</span></div>
+      {ordenadas.map((p) => (
+        <div key={p.id} style={{ borderTop: "1px dashed #000", marginTop: 6, paddingTop: 6 }}>
+          <div className="linha" style={{ fontWeight: 700 }}><span>Parcela {p.numero}/{p.total_parcelas}</span><span>{fmtMoeda(p.valor)}</span></div>
+          <div className="linha"><span>Vencimento</span><span>{fmtData(p.vencimento)}</span></div>
+          <div>{p.status === "paga" ? `PAGA em ${fmtDataHora(p.pago_em)}` : p.status === "cancelada" ? "CANCELADA" : "Pago em: ___/___/_____"}</div>
+          <div style={{ marginTop: 8 }}>Recebido por: ______________</div>
+        </div>
+      ))}
+      <hr />
+      <div className="centro" style={{ fontSize: "0.8em" }}>Documento não fiscal · Loja Fácil</div>
     </div>
   );
 }

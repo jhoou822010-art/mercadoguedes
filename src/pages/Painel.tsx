@@ -17,13 +17,14 @@ function Indicador({ titulo, valor, detalhe, para, cor }: { titulo: string; valo
 }
 
 export default function Painel() {
-  const { perfil, ehAdmin, config } = useAuth();
+  const { perfil, ehAdmin, config, tem0006, valoresOcultos } = useAuth();
   const [resumo, setResumo] = useState<ResumoPainel | null>(null);
   const [baixos, setBaixos] = useState<ProdutoView[]>([]);
   const [vencendo, setVencendo] = useState<ProdutoView[]>([]);
   const [movs, setMovs] = useState<Movimentacao[]>([]);
   const [erro, setErro] = useState("");
   const [hoje, setHoje] = useState<{ qtd: number; total: number } | null>(null);
+  const [receber, setReceber] = useState<{ fiado: number; crediario: number; atrasado: number; clientes: number } | null>(null);
 
   const carregar = useCallback(async () => {
     try {
@@ -42,10 +43,24 @@ export default function Painel() {
       inicio.setHours(0, 0, 0, 0);
       const { data: vh } = await supabase.from("vendas").select("total").eq("status", "concluida").gte("criado_em", inicio.toISOString()).limit(5000);
       if (vh) setHoje({ qtd: vh.length, total: vh.reduce((s, v) => s + Number(v.total), 0) });
+      // A receber: fiado pendente + parcelas do crediário em aberto.
+      const [fi, pa] = await Promise.all([
+        supabase.from("venda_pagamentos").select("valor, vendas!inner(status, cliente_nome)").eq("forma", "fiado").is("fiado_recebido_em", null).eq("vendas.status", "concluida").limit(10000),
+        tem0006 ? supabase.from("parcelas").select("valor, vencimento, cliente_id").eq("status", "aberta").limit(10000) : Promise.resolve({ data: [] as { valor: number; vencimento: string; cliente_id: number }[] }),
+      ]);
+      const fiados = (fi.data ?? []) as unknown as { valor: number; vendas: { cliente_nome: string | null } }[];
+      const parcelas = (pa.data ?? []) as { valor: number; vencimento: string; cliente_id: number }[];
+      const hojeTxt = new Date().toLocaleDateString("sv-SE");
+      setReceber({
+        fiado: fiados.reduce((s, f) => s + Number(f.valor), 0),
+        crediario: parcelas.reduce((s, p) => s + Number(p.valor), 0),
+        atrasado: parcelas.filter((p) => p.vencimento < hojeTxt).reduce((s, p) => s + Number(p.valor), 0),
+        clientes: new Set([...fiados.map((f) => `f:${f.vendas.cliente_nome}`), ...parcelas.map((p) => `c:${p.cliente_id}`)]).size,
+      });
     } catch (e) {
       setErro(mensagemErro(e));
     }
-  }, []);
+  }, [tem0006]);
 
   useEffect(() => {
     void carregar();
@@ -81,11 +96,27 @@ export default function Painel() {
 
       {resumo && (
         <>
-          {hoje && (
-            <Link to="/vendas" className="cartao mb-3 flex flex-wrap items-center justify-between gap-2 border-l-4 border-l-acao-500 p-4 hover:shadow-md">
-              <span className="text-sm font-semibold uppercase tracking-wide text-slate-500">Vendas de hoje</span>
-              <span className="text-lg"><strong>{hoje.qtd}</strong> venda(s) · <strong className="text-2xl">{fmtMoeda(hoje.total)}</strong></span>
-            </Link>
+          {!valoresOcultos && (hoje || receber) && (
+            <div className="mb-3 grid gap-3 lg:grid-cols-2">
+              {hoje && (
+                <Link to="/vendas" className="cartao flex flex-wrap items-center justify-between gap-2 border-l-4 border-l-acao-500 p-4 hover:shadow-md">
+                  <span className="text-sm font-semibold uppercase tracking-wide text-slate-500">Vendas de hoje</span>
+                  <span className="text-lg"><strong>{hoje.qtd}</strong> venda(s) · <strong className="text-2xl">{fmtMoeda(hoje.total)}</strong></span>
+                </Link>
+              )}
+              {receber && (
+                <Link to={receber.atrasado > 0 ? "/vendas?aba=crediario" : "/vendas?aba=fiado"} className={`cartao flex flex-wrap items-center justify-between gap-2 border-l-4 p-4 hover:shadow-md ${receber.atrasado > 0 ? "border-l-critico-600" : "border-l-petroleo-600"}`}>
+                  <span>
+                    <span className="block text-sm font-semibold uppercase tracking-wide text-slate-500">A receber (fiado + crediário)</span>
+                    <span className="text-xs text-slate-500">
+                      Fiado {fmtMoeda(receber.fiado)} · Crediário {fmtMoeda(receber.crediario)} · {receber.clientes} cliente(s)
+                      {receber.atrasado > 0 && <strong className="ml-1 text-critico-600">· atrasado {fmtMoeda(receber.atrasado)}</strong>}
+                    </span>
+                  </span>
+                  <strong className="text-2xl">{fmtMoeda(receber.fiado + receber.crediario)}</strong>
+                </Link>
+              )}
+            </div>
           )}
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
             <Indicador titulo="Produtos ativos" valor={String(resumo.total_produtos)} detalhe={resumo.total_inativos ? `${resumo.total_inativos} inativo(s) · ver lista →` : undefined} para="/produtos" cor="border-l-petroleo-600" />

@@ -1,15 +1,17 @@
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import { MeuPerfil } from "./MeuPerfil";
 import { LOGO_PADRAO } from "../lib/marca";
+import { Carregando } from "./Ui";
+import { SemConexao } from "./SemConexao";
 
 interface Item { para: string; rotulo: string; icone: string; admin?: boolean }
 
 const ITENS: Item[] = [
   { para: "/", rotulo: "Painel", icone: "▦" },
   { para: "/caixa", rotulo: "Caixa (venda)", icone: "🛒" },
-  { para: "/vendas", rotulo: "Vendas e fiado", icone: "🧾" },
+  { para: "/vendas", rotulo: "Vendas e crediário", icone: "🧾" },
   { para: "/produtos", rotulo: "Produtos", icone: "▤" },
   { para: "/estoque", rotulo: "Estoque", icone: "⇅" },
   { para: "/etiquetas", rotulo: "Etiquetas", icone: "🏷" },
@@ -138,7 +140,10 @@ export function Layout() {
 
       <main className="min-w-0 flex-1 px-4 py-5 sm:px-6 lg:px-8 lg:py-8">
         <div className="mx-auto max-w-7xl">
-          <Outlet />
+          <SemConexao />
+          <Suspense fallback={<Carregando texto="Abrindo a tela…" />}>
+            <Outlet />
+          </Suspense>
         </div>
       </main>
     </div>

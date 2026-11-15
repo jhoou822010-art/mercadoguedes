@@ -11,6 +11,10 @@ interface AuthValor {
   /** Mensagem quando o login funcionou mas o perfil não pôde ser carregado. */
   erroPerfil: string;
   ehAdmin: boolean;
+  /** SQL 0006 (crediário, clientes, ocultar valores) já foi rodado no Supabase. */
+  tem0006: boolean;
+  /** Usuário atual não deve ver totais de venda (operador + opção ligada). */
+  valoresOcultos: boolean;
   recarregar: () => Promise<void>;
   sair: () => Promise<void>;
 }
@@ -66,6 +70,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     carregando,
     erroPerfil,
     ehAdmin: perfil?.papel === "admin",
+    tem0006: config?.ocultar_valores_operador !== undefined,
+    valoresOcultos: perfil?.papel !== "admin" && config?.ocultar_valores_operador === true,
     recarregar: () => carregarPerfil(sessao),
     sair: async () => {
       await supabase.auth.signOut();

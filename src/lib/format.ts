@@ -70,6 +70,7 @@ export const NOME_FORMA: Record<FormaPagamento, string> = {
   vale_alimentacao: "Vale-alimentação",
   vale_refeicao: "Vale-refeição",
   fiado: "Fiado",
+  crediario: "Crediário",
   outro: "Outro",
 };
 
@@ -97,4 +98,34 @@ export function cnpjValido(v: string) {
     return r < 2 ? 0 : 11 - r;
   };
   return calc(12) === Number(d[12]) && calc(13) === Number(d[13]);
+}
+
+/** Data de hoje (fuso do navegador) no formato AAAA-MM-DD. */
+export function hojeISO(somarDias = 0) {
+  const d = new Date();
+  d.setDate(d.getDate() + somarDias);
+  return d.toLocaleDateString("sv-SE");
+}
+
+/** Divide um valor em parcelas iguais; a última fica com os centavos (igual ao banco). */
+export function dividirParcelas(total: number, n: number): number[] {
+  const base = Math.floor((total * 100) / n) / 100;
+  return Array.from({ length: n }, (_, i) => (i === n - 1 ? centavos(total - base * (n - 1)) : base));
+}
+
+/** Soma meses a uma data AAAA-MM-DD (mesmo comportamento do banco: 31/01 + 1 mês = 28/02). */
+export function somarMeses(iso: string, meses: number) {
+  const [a, m, d] = iso.split("-").map(Number);
+  const alvo = new Date(a, m - 1 + meses, 1);
+  const ultimoDia = new Date(alvo.getFullYear(), alvo.getMonth() + 1, 0).getDate();
+  alvo.setDate(Math.min(d, ultimoDia));
+  return alvo.toLocaleDateString("sv-SE");
+}
+
+/** Dias entre hoje e a data (negativo = atrasado). */
+export function diasAte(iso: string) {
+  const [a, m, d] = iso.split("-").map(Number);
+  const alvo = new Date(a, m - 1, d).getTime();
+  const h = new Date(); h.setHours(0, 0, 0, 0);
+  return Math.round((alvo - h.getTime()) / 86400000);
 }

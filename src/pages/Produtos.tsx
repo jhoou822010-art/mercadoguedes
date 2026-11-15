@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { supabase, mensagemErro } from "../lib/supabase";
-import { termoBusca } from "../lib/data";
+import { buscarTodos, termoBusca } from "../lib/data";
+import { exportarProdutosCsv } from "../lib/planilha";
+import { ImportarPlanilha } from "./ImportarPlanilha";
 import { fmtData, fmtDataHora, fmtMoeda, fmtQtd } from "../lib/format";
 import type { Movimentacao, ProdutoView } from "../lib/types";
 import { useAuth } from "../contexts/AuthContext";
@@ -33,6 +35,18 @@ export default function Produtos() {
   const [fornecedores, setFornecedores] = useState<string[]>([]);
 
   const [editando, setEditando] = useState<ProdutoView | null | "novo">(params.get("novo") ? "novo" : null);
+  const [importando, setImportando] = useState(false);
+  const navegar = useNavigate();
+
+  async function exportarTodos() {
+    try {
+      const todos = await buscarTodos<ProdutoView>("vw_produtos", { coluna: "nome" });
+      exportarProdutosCsv(todos);
+      avisar("sucesso", `${todos.length} produto(s) exportado(s). Abra o arquivo no Excel.`);
+    } catch (e) {
+      avisar("erro", mensagemErro(e));
+    }
+  }
   const [detalhe, setDetalhe] = useState<ProdutoView | null>(null);
   const [removendo, setRemovendo] = useState<ProdutoView | null>(null);
   const [processando, setProcessando] = useState(false);
@@ -112,7 +126,14 @@ export default function Produtos() {
       <Cabecalho
         titulo="Produtos"
         descricao="Pesquise por nome, código, código de barras, categoria ou fornecedor."
-        acoes={ehAdmin && <button className="btn-acao" onClick={() => setEditando("novo")}>+ Cadastrar produto</button>}
+        acoes={
+          <>
+            {ehAdmin && <button className="btn-secundario" onClick={() => setImportando(true)}>⤒ Importar planilha</button>}
+            <button className="btn-secundario" onClick={exportarTodos}>⤓ Exportar planilha</button>
+            <button className="btn-secundario" onClick={() => navegar("/relatorios?r=produtos&imprimir=1")}>🖨 Imprimir lista</button>
+            {ehAdmin && <button className="btn-acao" onClick={() => setEditando("novo")}>+ Cadastrar produto</button>}
+          </>
+        }
       />
 
       <div className="cartao mb-4 grid gap-3 p-4 sm:grid-cols-2 lg:grid-cols-5">
@@ -254,6 +275,8 @@ export default function Produtos() {
           onRemover={() => setRemovendo(detalhe)}
         />
       )}
+
+      {importando && <ImportarPlanilha onFechar={() => setImportando(false)} onConcluido={() => { void carregar(); void carregarListas(); }} />}
 
       <Confirmar
         aberto={Boolean(removendo)}

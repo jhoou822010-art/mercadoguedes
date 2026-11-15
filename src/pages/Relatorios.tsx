@@ -3,7 +3,8 @@ import { useSearchParams } from "react-router-dom";
 import { supabase, mensagemErro } from "../lib/supabase";
 import { buscarTodos } from "../lib/data";
 import { baixarCsv, hojeArquivo } from "../lib/csv";
-import { fmtData, fmtDataHora, fmtMoeda, fmtQtd, NOME_TIPO, NOME_VALIDADE, textoDias } from "../lib/format";
+import { exportarProdutosCsv } from "../lib/planilha";
+import { fmtData, fmtDataHora, fmtMoeda, fmtQtd, NOME_TIPO, textoDias } from "../lib/format";
 import type { Movimentacao, ProdutoView } from "../lib/types";
 import { useAuth } from "../contexts/AuthContext";
 import { useToast } from "../components/Toast";
@@ -64,15 +65,20 @@ export default function Relatorios() {
       return;
     }
     if (!dados) return;
-    baixarCsv(
-      nome,
-      ["Código", "Código de barras", "Descrição", "Categoria", "Unidade", "Modelo", "Fornecedor", "Custo", "Preço de venda", "Estoque", "Estoque mínimo", "Valor em estoque", "Validade", "Situação da validade", "Ativo"],
-      dados.map((p) => [p.codigo, p.barras, p.nome, p.categoria, p.unidade, p.modelo, p.fornecedor, Number(p.custo), Number(p.preco), Number(p.estoque), Number(p.estoque_minimo), Number(p.valor_estoque), fmtData(p.validade), NOME_VALIDADE[p.situacao_validade], p.ativo ? "Sim" : "Não"]),
-    );
+    exportarProdutosCsv(dados, nome);
     avisar("sucesso", `${dados.length} produto(s) exportado(s) para ${nome}. Abra no Excel ou outro programa de planilhas.`);
   }
 
   const carregando = rel === "movimentacoes" ? !movs : !dados;
+
+  // Aberto por "Imprimir lista" (tela Produtos): imprime assim que os dados chegam.
+  const [impresso, setImpresso] = useState(false);
+  useEffect(() => {
+    if (params.get("imprimir") === "1" && !carregando && !impresso) {
+      setImpresso(true);
+      setTimeout(() => window.print(), 300);
+    }
+  }, [params, carregando, impresso]);
   const vazio = rel === "movimentacoes" ? movs?.length === 0 : dados?.length === 0;
 
   return (

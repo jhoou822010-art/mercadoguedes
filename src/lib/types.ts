@@ -75,6 +75,8 @@ export interface Configuracoes {
   logo_no_comprovante?: boolean;
   /** Se operadores podem vender item avulso (migração 0005). Ausente = SQL 0005 não rodado. */
   permitir_item_avulso?: boolean;
+  /** Esconde totais e o valor esperado do caixa dos operadores (migração 0006). Ausente = SQL 0006 não rodado. */
+  ocultar_valores_operador?: boolean;
 }
 
 export interface ResumoPainel {
@@ -86,7 +88,9 @@ export interface ResumoPainel {
   vencidos: number;
 }
 
-export const FORMAS = ["dinheiro", "pix", "debito", "credito", "vale_alimentacao", "vale_refeicao", "fiado", "outro"] as const;
+export const FORMAS = ["dinheiro", "pix", "debito", "credito", "vale_alimentacao", "vale_refeicao", "fiado", "crediario", "outro"] as const;
+/** Formas aceitas para receber fiado ou parcela (não faz sentido receber "no fiado"). */
+export const FORMAS_RECEBIMENTO = ["dinheiro", "pix", "debito", "credito", "vale_alimentacao", "vale_refeicao", "outro"] as const;
 export type FormaPagamento = (typeof FORMAS)[number];
 
 export interface Caixa {
@@ -123,7 +127,11 @@ export interface ResumoCaixa {
   suprimentos: number;
   recebimentos_fiado: number;
   recebimentos_fiado_dinheiro: number;
+  recebimentos_crediario?: number;
+  recebimentos_crediario_dinheiro?: number;
   dinheiro_esperado: number;
+  /** Verdadeiro quando os valores foram escondidos (operador + fechamento cego). */
+  oculto?: boolean;
 }
 
 export interface VendaItem {
@@ -163,6 +171,7 @@ export interface Venda {
   troco: number;
   cliente_nome: string | null;
   cliente_telefone: string | null;
+  cliente_id?: number | null;
   criado_em: string;
   cancelada_em: string | null;
   cancelada_por_nome: string | null;
@@ -173,4 +182,35 @@ export interface Venda {
 export interface VendaCompleta extends Venda {
   venda_itens: VendaItem[];
   venda_pagamentos: VendaPagamento[];
+  parcelas?: Parcela[];
+}
+
+export interface Cliente {
+  id: number;
+  nome: string;
+  telefone: string | null;
+  cpf: string | null;
+  endereco: string | null;
+  limite_credito: number | null;
+  observacao: string | null;
+  ativo: boolean;
+  criado_em: string;
+  atualizado_em: string;
+}
+
+export interface Parcela {
+  id: number;
+  venda_id: number;
+  pagamento_id: number | null;
+  cliente_id: number;
+  numero: number;
+  total_parcelas: number;
+  valor: number;
+  vencimento: string;
+  status: "aberta" | "paga" | "cancelada";
+  pago_em: string | null;
+  pago_forma: FormaPagamento | null;
+  pago_por: string | null;
+  caixa_id: number | null;
+  criado_em: string;
 }

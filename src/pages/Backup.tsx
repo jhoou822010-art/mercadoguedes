@@ -1,16 +1,17 @@
 import { useState } from "react";
 import { mensagemErro } from "../lib/supabase";
 import { buscarTodos } from "../lib/data";
+import { supabase } from "../lib/supabase";
 import { baixarArquivo } from "../lib/csv";
 import type { Configuracoes, Movimentacao, Produto } from "../lib/types";
 import { useAuth } from "../contexts/AuthContext";
 import { useToast } from "../components/Toast";
 import { Aviso, Cabecalho } from "../components/Ui";
 
-export const VERSAO_BACKUP = 2;
+export const VERSAO_BACKUP = 3;
 
 export default function Backup() {
-  const { perfil } = useAuth();
+  const { perfil, tem0006 } = useAuth();
   const avisar = useToast();
   const [etapa, setEtapa] = useState("");
   const [ultimo, setUltimo] = useState<{ arquivo: string; produtos: number; movimentacoes: number } | null>(null);
@@ -25,8 +26,12 @@ export default function Backup() {
       const vendas = await buscarTodos("vendas");
       const venda_itens = await buscarTodos("venda_itens");
       const venda_pagamentos = await buscarTodos("venda_pagamentos");
-      const caixas = await buscarTodos("caixas");
+      // Caixas completos (com esperado/diferença) vêm por listar_caixas (SQL 0006); antes dele, leitura direta.
+      const rc = await supabase.rpc("listar_caixas", { p_limite: 5000 });
+      const caixas = rc.error ? await buscarTodos("caixas") : (rc.data as unknown[]);
       const caixa_movimentos = await buscarTodos("caixa_movimentos");
+      const clientes = tem0006 ? await buscarTodos("clientes") : [];
+      const parcelas = tem0006 ? await buscarTodos("parcelas") : [];
       setEtapa("Lendo configurações…");
       const [configuracoes] = await buscarTodos<Configuracoes>("configuracoes");
       const agora = new Date();
@@ -44,6 +49,8 @@ export default function Backup() {
         venda_pagamentos,
         caixas,
         caixa_movimentos,
+        clientes,
+        parcelas,
       };
       const carimbo = agora.toLocaleString("sv-SE").replace(/[: ]/g, "-");
       const arquivo = `loja-facil-backup-${carimbo}.json`;
@@ -66,6 +73,7 @@ export default function Backup() {
           <li>todos os produtos (ativos e inativos);</li>
           <li>todo o histórico de movimentações de estoque;</li>
           <li>vendas (itens e pagamentos), fiados, caixas, sangrias e suprimentos;</li>
+          <li>clientes e parcelas do crediário;</li>
           <li>as configurações da loja;</li>
           <li>a data da exportação e a versão do formato do backup (versão {VERSAO_BACKUP}).</li>
         </ul>

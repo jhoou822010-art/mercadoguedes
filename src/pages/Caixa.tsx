@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { supabase, mensagemErro } from "../lib/supabase";
-import { centavos, fmtDataHora, fmtMoeda, fmtQtd, lerNumero, NOME_FORMA } from "../lib/format";
-import { FORMAS, type Caixa as TCaixa, type FormaPagamento, type ProdutoView, type ResumoCaixa, type Venda, type VendaCompleta } from "../lib/types";
+import { centavos, dividirParcelas, fmtData, fmtDataHora, fmtMoeda, fmtQtd, hojeISO, lerNumero, NOME_FORMA, somarMeses } from "../lib/format";
+import { FORMAS, type Cliente, type Caixa as TCaixa, type FormaPagamento, type ProdutoView, type ResumoCaixa, type Venda, type VendaCompleta } from "../lib/types";
 import { useAuth } from "../contexts/AuthContext";
 import { useToast } from "../components/Toast";
 import { Confirmar, Modal } from "../components/Modal";
@@ -9,6 +9,8 @@ import { ProdutoBusca } from "../components/ProdutoBusca";
 import { CupomFechamento, CupomVenda, JanelaComprovante } from "../components/Comprovante";
 import { Aviso, Cabecalho, Carregando } from "../components/Ui";
 import { Calculadora } from "../components/Calculadora";
+import { ClienteSeletor } from "../components/ClienteSeletor";
+import { COLUNAS_CAIXA, selecaoVenda } from "../lib/consultas";
 import { ACOES, mapaAtalhos, nomeTecla, rotulo, useAtalhos, type MapaAtalhos } from "../lib/atalhos";
 
 /* ======================================================================
@@ -22,11 +24,11 @@ export default function Caixa() {
   const carregar = useCallback(async () => {
     const { data } = await supabase
       .from("caixas")
-      .select("*")
+      .select(COLUNAS_CAIXA)
       .eq("usuario_id", sessao!.user.id)
       .eq("status", "aberto")
       .maybeSingle();
-    setCaixa((data as TCaixa) ?? null);
+    setCaixa((data as unknown as TCaixa) ?? null);
   }, [sessao]);
 
   useEffect(() => { void carregar(); }, [carregar]);
@@ -103,7 +105,7 @@ function lerCarrinho(caixaId: number): { itens: ItemCarrinho[]; desconto: Descon
 const INTEIRAS = ["UN", "PCT", "CX"];
 
 function PontoDeVenda({ caixa, onFechado }: { caixa: TCaixa; onFechado: () => void }) {
-  const { ehAdmin, config } = useAuth();
+  const { ehAdmin, config, tem0006 } = useAuth();
   const avisar = useToast();
   const inicial = useMemo(() => lerCarrinho(caixa.id), [caixa.id]);
   const [itens, setItens] = useState<ItemCarrinho[]>(inicial.itens);
@@ -179,9 +181,9 @@ function PontoDeVenda({ caixa, onFechado }: { caixa: TCaixa; onFechado: () => vo
   const avulsoLiberado = ehAdmin || config?.permitir_item_avulso !== false;
   function abrirAvulso() {
     if (config && config.permitir_item_avulso === undefined) {
-      return avisar("erro", "Para usar item sem cadastro, o administrador precisa rodar o SQL 0005_item_avulso.sql no Supabase.");
+      return avisar("erro", "Para usar “Digite o produto”, o administrador precisa rodar o SQL 0005_item_avulso.sql no Supabase.");
     }
-    if (!avulsoLiberado) return avisar("erro", "Item sem cadastro não está liberado para operador. Peça ao administrador.");
+    if (!avulsoLiberado) return avisar("erro", "“Digite o produto” não está liberado para operador. Peça ao administrador.");
     setJanela("avulso");
   }
   function adicionarAvulso(descricao: string, preco: number, quantidade: number) {
@@ -240,9 +242,9 @@ function PontoDeVenda({ caixa, onFechado }: { caixa: TCaixa; onFechado: () => vo
   }
 
   async function vendaConcluida(v: Venda) {
-    const { data } = await supabase.from("vendas").select("*, venda_itens(*), venda_pagamentos(*)").eq("id", v.id).single();
+    const { data } = await supabase.from("vendas").select(selecaoVenda(tem0006)).eq("id", v.id).single();
     limpar();
-    setComprovante(data as VendaCompleta);
+    setComprovante(data as unknown as VendaCompleta);
     avisar("sucesso", `Venda nº ${v.id} finalizada.${Number(v.troco) > 0 ? ` Troco: ${fmtMoeda(v.troco)}.` : ""}`);
   }
 
@@ -333,7 +335,7 @@ function PontoDeVenda({ caixa, onFechado }: { caixa: TCaixa; onFechado: () => vo
           <div className="grid grid-cols-2 gap-2">
             {avulsoLiberado && (
               <button className="btn-secundario btn-pequeno col-span-2 border-acao-500 text-acao-700 hover:bg-orange-50" onClick={abrirAvulso}>
-                ✚ Item sem cadastro{rotulo(teclas, "item_avulso")}
+                ✚ Digite o produto{rotulo(teclas, "item_avulso")}
               </button>
             )}
             <button className="btn-secundario btn-pequeno" onClick={() => setJanela("calculadora")}>🧮 Calculadora{rotulo(teclas, "calculadora")}</button>
@@ -463,7 +465,7 @@ function JanelaDesconto({ subtotal, atual, limite, onAplicar, onFechar }: {
 
 /* ---------------------------- Pagamento ---------------------------- */
 
-interface Pag { forma: FormaPagamento; valor: number }
+interface Pag { forma: FormaPagamento; valor: number; cliente_id?: number; cliente_nome?: string; parcelas?: number; primeiro_vencimento?: string }
 
 function JanelaPagamento({ teclas, total, itens, desconto, onConcluida, onFechar }: {
   teclas: MapaAtalhos;
@@ -478,6 +480,10 @@ function JanelaPagamento({ teclas, total, itens, desconto, onConcluida, onFechar
   const [enviando, setEnviando] = useState(false);
   const campoValor = useRef<HTMLInputElement>(null);
   const [calc, setCalc] = useState(false);
+  const { tem0006 } = useAuth();
+  const [credCliente, setCredCliente] = useState<Cliente | null>(null);
+  const [credParcelas, setCredParcelas] = useState(1);
+  const [credPrimeiro, setCredPrimeiro] = useState(hojeISO(30));
 
   const pago = centavos(pags.reduce((s, p) => s + p.valor, 0));
   const falta = centavos(Math.max(0, total - pago));
@@ -488,6 +494,10 @@ function JanelaPagamento({ teclas, total, itens, desconto, onConcluida, onFechar
   useEffect(() => { setValor(falta > 0 ? String(falta).replace(".", ",") : ""); }, [falta]);
 
   function escolherForma(f: FormaPagamento) {
+    if (f === "crediario" && !tem0006) {
+      setErro("O crediário precisa do SQL 0006 no Supabase. Peça ao administrador.");
+      return;
+    }
     setForma(f);
     setErro("");
     setTimeout(() => campoValor.current?.select(), 30);
@@ -510,7 +520,14 @@ function JanelaPagamento({ teclas, total, itens, desconto, onConcluida, onFechar
     const v = centavos(lerNumero(valor));
     const e = validarNovo(forma, v);
     if (e) { setErro(e); return null; }
-    const novos = [...pags, { forma, valor: v }];
+    let novo: Pag = { forma, valor: v };
+    if (forma === "crediario") {
+      if (pags.some((p) => p.forma === "crediario")) { setErro("Use apenas um pagamento em crediário por venda."); return null; }
+      if (!credCliente) { setErro("Escolha ou cadastre o cliente do crediário."); return null; }
+      if (credPrimeiro < hojeISO()) { setErro("O primeiro vencimento não pode ser uma data passada."); return null; }
+      novo = { forma, valor: v, cliente_id: credCliente.id, cliente_nome: credCliente.nome, parcelas: credParcelas, primeiro_vencimento: credPrimeiro };
+    }
+    const novos = [...pags, novo];
     setPags(novos);
     setErro("");
     return novos;
@@ -525,7 +542,7 @@ function JanelaPagamento({ teclas, total, itens, desconto, onConcluida, onFechar
     const { data, error } = await supabase.rpc("finalizar_venda", {
       p_itens: itens,
       p_desconto: desconto,
-      p_pagamentos: lista,
+      p_pagamentos: lista.map(({ cliente_nome: _n, ...p }) => p),
       p_cliente_nome: cliente.trim() || null,
       p_cliente_telefone: telefone.trim() || null,
     });
@@ -576,8 +593,8 @@ function JanelaPagamento({ teclas, total, itens, desconto, onConcluida, onFechar
           <>
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
               {FORMAS.map((f) => (
-                <button key={f} type="button" onClick={() => escolherForma(f)}
-                  className={`rounded-lg border-2 px-2 py-2.5 text-sm font-semibold transition ${forma === f ? "border-acao-500 bg-orange-50 text-acao-700" : "border-slate-200 hover:bg-slate-50"}`}>
+                <button key={f} type="button" onClick={() => escolherForma(f)} title={f === "crediario" && !tem0006 ? "Precisa do SQL 0006" : undefined}
+                  className={`rounded-lg border-2 px-2 py-2.5 text-sm font-semibold transition ${forma === f ? "border-acao-500 bg-orange-50 text-acao-700" : "border-slate-200 hover:bg-slate-50"} ${f === "crediario" && !tem0006 ? "opacity-40" : ""}`}>
                   {NOME_FORMA[f]}
                   {teclas[`pag_${f}`] && <span className="block text-[11px] font-normal text-slate-400">{nomeTecla(teclas[`pag_${f}`])}</span>}
                 </button>
@@ -603,6 +620,37 @@ function JanelaPagamento({ teclas, total, itens, desconto, onConcluida, onFechar
               )}
               {(forma === "debito" || forma === "credito") && <p className="mt-2 text-xs text-slate-500">Passe o cartão na maquininha e confirme aqui depois de aprovado.</p>}
             </div>
+            {forma === "crediario" && (
+              <div className="space-y-3 rounded-lg border border-petroleo-200 bg-white p-3">
+                <p className="text-sm font-semibold text-petroleo-800">Crediário (parcelado)</p>
+                <ClienteSeletor escolhido={credCliente} onEscolher={setCredCliente} />
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="rotulo" htmlFor="cred-n">Parcelas</label>
+                    <select id="cred-n" className="campo" value={credParcelas} onChange={(e) => setCredParcelas(Number(e.target.value))}>
+                      {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 18, 24].map((n) => <option key={n} value={n}>{n}x</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="rotulo" htmlFor="cred-d">1º vencimento</label>
+                    <input id="cred-d" type="date" className="campo" value={credPrimeiro} min={hojeISO()} onChange={(e) => setCredPrimeiro(e.target.value)} />
+                  </div>
+                </div>
+                {(() => {
+                  const v = centavos(lerNumero(valor));
+                  if (Number.isNaN(v) || v <= 0) return null;
+                  return (
+                    <ul className="grid gap-1 text-xs text-slate-600 sm:grid-cols-2">
+                      {dividirParcelas(v, credParcelas).map((x, i) => (
+                        <li key={i} className="flex justify-between rounded bg-slate-50 px-2 py-1">
+                          <span>{i + 1}/{credParcelas} · {fmtData(somarMeses(credPrimeiro, i))}</span><strong>{fmtMoeda(x)}</strong>
+                        </li>
+                      ))}
+                    </ul>
+                  );
+                })()}
+              </div>
+            )}
           </>
         )}
 
@@ -610,7 +658,7 @@ function JanelaPagamento({ teclas, total, itens, desconto, onConcluida, onFechar
           <ul className="divide-y divide-slate-100 rounded-lg border border-slate-200">
             {pags.map((p, i) => (
               <li key={i} className="flex items-center justify-between px-3 py-2 text-sm">
-                <span>{NOME_FORMA[p.forma]}</span>
+                <span>{NOME_FORMA[p.forma]}{p.forma === "crediario" && <span className="text-xs text-slate-500"> · {p.parcelas}x · {p.cliente_nome}</span>}</span>
                 <span className="flex items-center gap-3">
                   <strong>{fmtMoeda(p.valor)}</strong>
                   <button type="button" className="text-slate-400 hover:text-critico-600" aria-label="Remover pagamento" onClick={() => setPags(pags.filter((_, n) => n !== i))}>✕</button>
@@ -705,7 +753,8 @@ function JanelaFechamento({ caixa, onCancelar, onFechado }: { caixa: TCaixa; onC
   }, [caixa.id]);
 
   const n = lerNumero(contado);
-  const diferenca = resumo && !Number.isNaN(n) ? centavos(n - resumo.dinheiro_esperado) : null;
+  const cego = Boolean(resumo?.oculto);
+  const diferenca = resumo && !cego && !Number.isNaN(n) ? centavos(n - resumo.dinheiro_esperado) : null;
 
   async function fechar() {
     setEnviando(true);
@@ -741,13 +790,29 @@ function JanelaFechamento({ caixa, onCancelar, onFechado }: { caixa: TCaixa; onC
     <Modal aberto titulo={`Fechar caixa nº ${caixa.id}`} largura="lg" onFechar={onCancelar}
       rodape={
         <>
-          <button className="btn-secundario mr-auto" disabled={!resumo} onClick={() => setParcial(true)}>🖨 Resumo parcial</button>
+          {!cego && <button className="btn-secundario mr-auto" disabled={!resumo} onClick={() => setParcial(true)}>🖨 Resumo parcial</button>}
           <button className="btn-secundario" onClick={onCancelar}>Voltar</button>
           <button className="btn-perigo" disabled={!resumo || Number.isNaN(n) || n < 0}
             onClick={() => { setErro(""); setConfirmando(true); }}>Fechar caixa</button>
         </>
       }>
-      {!resumo ? (erro ? <Aviso cor="critico">{erro}</Aviso> : <Carregando />) : (
+      {!resumo ? (erro ? <Aviso cor="critico">{erro}</Aviso> : <Carregando />) : cego ? (
+        <div className="mx-auto max-w-sm space-y-4">
+          <Aviso cor="petroleo">
+            <strong>Fechamento cego:</strong> conte todo o dinheiro da gaveta e digite o valor. A conferência com o sistema é feita pelo administrador.
+          </Aviso>
+          <p className="text-sm text-slate-500">{resumo.qtd_vendas} venda(s) neste caixa{resumo.qtd_canceladas > 0 && ` · ${resumo.qtd_canceladas} cancelada(s)`}.</p>
+          <div>
+            <label className="rotulo" htmlFor="contado">Dinheiro contado na gaveta (R$) <span className="text-critico-600">*</span></label>
+            <input id="contado" className="campo text-xl font-bold" inputMode="decimal" value={contado} onChange={(e) => setContado(e.target.value)} autoFocus />
+          </div>
+          <div>
+            <label className="rotulo" htmlFor="obs-f">Observação</label>
+            <input id="obs-f" className="campo" value={obs} onChange={(e) => setObs(e.target.value)} placeholder="Ex.: moedas separadas em saquinho" />
+          </div>
+          {erro && <Aviso cor="critico">{erro}</Aviso>}
+        </div>
+      ) : (
         <div className="grid gap-5 sm:grid-cols-2">
           <div>
             <h3 className="mb-2 font-semibold">Vendas</h3>
@@ -758,6 +823,7 @@ function JanelaFechamento({ caixa, onCancelar, onFechado }: { caixa: TCaixa; onC
             {Object.keys(resumo.por_forma).length === 0 ? <p className="text-sm text-slate-400">Nenhuma venda.</p>
               : Object.entries(resumo.por_forma).map(([f, v]) => <div key={f}>{linha(NOME_FORMA[f as FormaPagamento] ?? f, Number(v))}</div>)}
             {resumo.recebimentos_fiado > 0 && linha("Fiados recebidos", resumo.recebimentos_fiado)}
+            {Number(resumo.recebimentos_crediario ?? 0) > 0 && linha("Parcelas recebidas", Number(resumo.recebimentos_crediario))}
           </div>
           <div>
             <h3 className="mb-2 font-semibold">Dinheiro na gaveta</h3>
@@ -766,6 +832,7 @@ function JanelaFechamento({ caixa, onCancelar, onFechado }: { caixa: TCaixa; onC
             {linha("− Trocos dados", resumo.trocos)}
             {linha("+ Suprimentos", resumo.suprimentos)}
             {resumo.recebimentos_fiado_dinheiro > 0 && linha("+ Fiado recebido", resumo.recebimentos_fiado_dinheiro)}
+            {Number(resumo.recebimentos_crediario_dinheiro ?? 0) > 0 && linha("+ Parcelas recebidas", Number(resumo.recebimentos_crediario_dinheiro))}
             {linha("− Sangrias", resumo.sangrias)}
             <div className="mt-1 border-t border-slate-200 pt-1">{linha("= Esperado na gaveta", resumo.dinheiro_esperado, true)}</div>
             <div className="mt-4">
@@ -853,7 +920,7 @@ function JanelaAvulso({ onAdicionar, onFechar }: { onAdicionar: (descricao: stri
   return (
     <Modal
       aberto
-      titulo="Item sem cadastro"
+      titulo="Digite o produto (sem cadastro)"
       largura="sm"
       onFechar={onFechar}
       rodape={

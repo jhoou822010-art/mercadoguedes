@@ -42,7 +42,7 @@ Descompacte o arquivo `loja-facil.zip` numa pasta, por exemplo `C:\projetos\loja
 
 ### 2.2 Criar as tabelas
 
-São **5 arquivos**, rodados **nesta ordem**, cada um **uma vez só**:
+São **6 arquivos**, rodados **nesta ordem**, cada um **uma vez só**:
 
 | Ordem | Arquivo | O que cria |
 |---|---|---|
@@ -50,7 +50,8 @@ São **5 arquivos**, rodados **nesta ordem**, cada um **uma vez só**:
 | 2º | `supabase/migrations/0002_caixa_vendas.sql` | caixa, vendas, pagamentos, fiado, comprovante |
 | 3º | `supabase/migrations/0003_atalhos_teclado.sql` | teclas de atalho do caixa |
 | 4º | `supabase/migrations/0004_logo_loja.sql` | logo da loja |
-| 5º | `supabase/migrations/0005_item_avulso.sql` | item sem cadastro no caixa |
+| 5º | `supabase/migrations/0005_item_avulso.sql` | “Digite o produto” (item sem cadastro) no caixa |
+| 6º | `supabase/migrations/0006_crediario_clientes_ocultar.sql` | crediário, clientes, ocultar valores e fechamento cego |
 
 Para cada arquivo:
 
@@ -65,7 +66,7 @@ Para cada arquivo:
 Todas devem mostrar o selo de **RLS ativado** (cadeado).
 
 > ⚠️ Se rodar um arquivo de novo, vai dar erro de "already exists". Isso não estraga nada, mas também não é necessário.
-> Se rodar fora de ordem, dá erro: rode o 0001, depois o 0002, depois o 0003, depois o 0004, depois o 0005.
+> Se rodar fora de ordem, dá erro: rode o 0001, depois o 0002, depois o 0003, 0004, 0005 e 0006.
 
 ### 2.3 Configurar o login
 
@@ -233,7 +234,7 @@ Sem isso, o link de confirmação de e-mail leva para o endereço errado.
 2. **Passar os produtos**: o cursor já fica no campo de busca. Passe o leitor ou digite o nome ou código e aperte Enter.
    - Produto por unidade: passou duas vezes, a quantidade vira 2. Também dá para usar os botões − e +.
    - Produto por **KG ou LT**: o cursor vai para a quantidade. Digite o peso (ex.: `1,250`) e aperte Enter.
-3. **Item sem cadastro (Insert)**: para produto não cadastrado ou sem código, digite descrição, preço e quantidade (tem calculadora na janela). Entra na venda e no comprovante, mas não mexe no estoque. O administrador pode bloquear para as balconistas em **Usuários e loja**.
+3. **Digite o produto (Insert)**: para produto não cadastrado ou sem código, digite descrição, preço e quantidade (tem calculadora na janela). Entra na venda e no comprovante, mas não mexe no estoque. O administrador pode bloquear para as balconistas em **Usuários e loja**.
 4. **Desconto (F4)**: em reais ou em %. Respeita o limite definido pelo administrador.
 4. **Pagamento (F2)**: escolha a forma, digite o valor e aperte Enter.
    - **Dinheiro**: digite o valor que o cliente entregou. O **troco** aparece em verde.
@@ -265,7 +266,13 @@ Menu **Teclado do caixa**:
 
 > Se uma tecla abrir alguma função do navegador em vez da ação (raro, depende do navegador), troque por outra, por exemplo Ctrl + uma letra.
 
-Em **Vendas e fiado**:
+Crediário (parcelado): no pagamento escolha **Crediário**, busque ou cadastre o cliente, escolha o número de parcelas e o 1º vencimento. O comprovante sai com as parcelas e linha de assinatura. Em **Vendas e crediário → Crediário** ficam as parcelas em aberto/atrasadas, com **Receber** e **Carnê** (imprimir). Em **Clientes**: cadastro, extrato e limite de crédito (só o administrador define o limite).
+
+**Fechamento cego:** em **Usuários e loja → Caixa**, ligue “Ocultar valores das vendas”. As balconistas deixam de ver totais e o valor esperado; no fechamento só digitam o que contaram. O administrador vê sobra/falta em **Vendas e crediário → Caixas**.
+
+**Planilha de produtos:** em **Produtos** há **Importar planilha** (CSV do Excel, com prévia; cria e atualiza por código; célula vazia não apaga nada), **Exportar planilha** e **Imprimir lista**.
+
+Em **Vendas e crediário**:
 - **Vendas**: lista, reimpressão do comprovante, exportação CSV. **Cancelar venda** só o administrador; os produtos voltam ao estoque.
 - **Fiado a receber**: total por cliente. Botão **Receber**: o dinheiro entra no caixa aberto de quem recebeu.
 - **Caixas**: histórico de aberturas e fechamentos, com sobras e faltas.
@@ -321,5 +328,5 @@ Rode só as que faltam, em ordem (ex.: já rodou 0001 e 0002 → rode só o `000
 ## Mudanças futuras no banco
 
 Nunca altere o `0001_inicial.sql` depois de rodado.
-Cada mudança nova vira um arquivo novo: `0006_descricao.sql`, `0007_...`, rodado uma vez no SQL Editor.
+Cada mudança nova vira um arquivo novo: `0007_descricao.sql`, `0008_...`, rodado uma vez no SQL Editor.
 **Faça um backup antes** de rodar qualquer migração.
