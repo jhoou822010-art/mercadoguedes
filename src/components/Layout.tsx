@@ -5,6 +5,7 @@ import { MeuPerfil } from "./MeuPerfil";
 import { LOGO_PADRAO } from "../lib/marca";
 import { Carregando } from "./Ui";
 import { SemConexao } from "./SemConexao";
+import { InstalarApp } from "./InstalarApp";
 
 interface Item { para: string; rotulo: string; icone: string; admin?: boolean }
 
@@ -87,6 +88,7 @@ function Usuario() {
         <span className="block truncate font-medium text-white">{perfil?.nome}</span>
         <span className="block text-xs text-petroleo-200">{perfil?.papel === "admin" ? "Administrador" : "Operador"} · <span className="underline group-hover:text-white">Meu perfil</span></span>
       </button>
+      <div className="mb-2"><InstalarApp claro /></div>
       <button onClick={sair} className="w-full rounded-lg border border-white/20 px-3 py-2 text-xs font-medium text-white hover:bg-white/10">
         Sair
       </button>

@@ -1,4 +1,4 @@
-import { copyFileSync, existsSync } from "node:fs";
+import { copyFileSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { defineConfig, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
@@ -23,6 +23,10 @@ function paginasParaGithubPages(): Plugin {
       for (const rota of ROTAS) copyFileSync(index, resolve(dist, `${rota}.html`));
       // Endereço desconhecido: mostra o sistema (que volta para o Painel).
       copyFileSync(index, resolve(dist, "404.html"));
+      // Aplicativo instalável: cada publicação ganha uma versão nova do service worker,
+      // o que faz os computadores e celulares baixarem a versão nova e apagarem a antiga.
+      const sw = resolve(dist, "sw.js");
+      if (existsSync(sw)) writeFileSync(sw, readFileSync(sw, "utf8").replace("__VERSAO__", new Date().toISOString()));
     },
   };
 }

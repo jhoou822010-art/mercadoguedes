@@ -5,6 +5,9 @@ import "./index.css";
 import App from "./App";
 import { AuthProvider } from "./contexts/AuthContext";
 import { ToastProvider } from "./components/Toast";
+import { iniciarAppInstalavel } from "./lib/instalar";
+
+iniciarAppInstalavel();
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

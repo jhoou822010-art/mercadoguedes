@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from "react";
+import { InstalarApp } from "../components/InstalarApp";
 import { supabase, mensagemErro } from "../lib/supabase";
 import { Logo } from "../components/Layout";
 import { Aviso } from "../components/Ui";
@@ -79,6 +80,7 @@ export default function Login() {
             </p>
           )}
         </form>
+        <div className="mt-4"><InstalarApp claro /></div>
       </div>
     </div>
   );
