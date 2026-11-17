@@ -138,7 +138,7 @@ export async function fiadosLocal(recebidos: boolean) {
   const vendas = await vendasSemRepetir();
   return vendas.filter((v) => v.status === "concluida").flatMap((v) => v.venda_pagamentos
     .filter((p) => p.forma === "fiado" && Boolean(p.fiado_recebido_em) === recebidos)
-    .map((p) => ({ ...p, vendas: { id: v.id, uuid_local: v.uuid_local ?? null, cliente_nome: v.cliente_nome, cliente_telefone: v.cliente_telefone, criado_em: v.criado_em, status: v.status, usuario_nome: v.usuario_nome } })))
+    .map((p) => ({ ...p, vendas: { id: v.id, uuid_local: v.uuid_local ?? null, codigo_local: v.codigo_local ?? null, cliente_nome: v.cliente_nome, cliente_telefone: v.cliente_telefone, criado_em: v.criado_em, status: v.status, usuario_nome: v.usuario_nome } })))
     .sort((a, b) => b.id - a.id);
 }
 
@@ -151,7 +151,7 @@ export async function parcelasLocal(f: { status?: "aberta" | "paga"; atrasadas?:
   const doServidor = await lerTodos<ParcelaComJuncao>("parcelas");
   const locais: ParcelaComJuncao[] = (await vendasSemRepetir()).filter((v) => v.id < 0).flatMap((v) => (v.parcelas ?? []).map((p) => {
     const c = clientes.get(p.cliente_id);
-    return { ...p, clientes: c ? { nome: c.nome, telefone: c.telefone } : null, vendas: { id: v.id, criado_em: v.criado_em, status: v.status, total: v.total, uuid_local: v.uuid_local ?? null } } as ParcelaComJuncao;
+    return { ...p, clientes: c ? { nome: c.nome, telefone: c.telefone } : null, vendas: { id: v.id, criado_em: v.criado_em, status: v.status, total: v.total, uuid_local: v.uuid_local ?? null, codigo_local: v.codigo_local ?? null } } as ParcelaComJuncao;
   }));
   let l = [...doServidor, ...locais].filter((p) =>
     (!f.status || p.status === f.status) && (!f.atrasadas || p.vencimento < hoje) &&

@@ -83,6 +83,11 @@ function inicioPeriodo(dias: number) {
   return d.toISOString();
 }
 
+/** Número da venda para mostrar: o do servidor, ou o código do computador enquanto não foi enviada. */
+function numeroDaVenda(id: number, vendas?: { codigo_local?: string | null } | null) {
+  return id > 0 ? String(id) : (vendas?.codigo_local ?? "aguardando envio");
+}
+
 /** Janela genérica para receber um valor (fiado ou parcela) em alguma forma. */
 function JanelaReceber({ titulo, descricao, valor, onConfirmar, onFechar }: {
   titulo: string; descricao: ReactNode; valor: number; onConfirmar: (forma: FormaPagamento) => Promise<string | null>; onFechar: () => void;
@@ -377,7 +382,7 @@ function ListaFiado() {
                 {lista.map((f) => (
                   <tr key={f.id}>
                     <td><span className="font-medium">{f.vendas.cliente_nome}</span>{f.vendas.cliente_telefone && <span className="block text-xs text-slate-400">{f.vendas.cliente_telefone}</span>}</td>
-                    <td className="font-mono">{f.venda_id}</td>
+                    <td className="font-mono">{numeroDaVenda(f.venda_id, f.vendas as { codigo_local?: string | null })}</td>
                     <td className="whitespace-nowrap text-xs text-slate-500">{fmtDataHora(f.vendas.criado_em)}</td>
                     <td className="text-right font-semibold">{moeda(f.valor)}</td>
                     <td className={`text-right ${mostrarRecebidos ? "" : "nao-imprimir"}`}>
@@ -400,7 +405,7 @@ function ListaFiado() {
         <JanelaReceber
           titulo="Receber fiado"
           valor={Number(recebendo.valor)}
-          descricao={<p><strong>{recebendo.vendas.cliente_nome}</strong> · venda nº {recebendo.venda_id} de {fmtDataHora(recebendo.vendas.criado_em)}</p>}
+          descricao={<p><strong>{recebendo.vendas.cliente_nome}</strong> · venda {numeroDaVenda(recebendo.venda_id, recebendo.vendas as { codigo_local?: string | null })} de {fmtDataHora(recebendo.vendas.criado_em)}</p>}
           onFechar={() => setRecebendo(null)}
           onConfirmar={async (forma) => {
             // Grava neste computador (funciona sem internet) e envia ao servidor (na hora, se houver conexão).
@@ -425,7 +430,7 @@ function ListaFiado() {
               telefone={linhasExtrato.find((f) => f.vendas.cliente_telefone)?.vendas.cliente_telefone}
               config={config}
               largura={l}
-              linhas={linhasExtrato.map((f) => ({ descricao: `Venda nº ${f.venda_id}`, detalhe: fmtDataHora(f.vendas.criado_em), valor: Number(f.valor) }))}
+              linhas={linhasExtrato.map((f) => ({ descricao: `Venda ${numeroDaVenda(f.venda_id, f.vendas as { codigo_local?: string | null })}`, detalhe: fmtDataHora(f.vendas.criado_em), valor: Number(f.valor) }))}
               total={linhasExtrato.reduce((s, f) => s + Number(f.valor), 0)}
             />
           )}
@@ -516,7 +521,7 @@ function ListaCrediario() {
                   return (
                     <tr key={p.id} className={atrasada ? "bg-critico-50" : ""}>
                       <td><span className="font-medium">{p.clientes?.nome}</span>{p.clientes?.telefone && <span className="block text-xs text-slate-400">{p.clientes.telefone}</span>}</td>
-                      <td className="font-mono">{p.venda_id}</td>
+                      <td className="font-mono">{numeroDaVenda(p.venda_id, p.vendas as { codigo_local?: string | null })}</td>
                       <td>{p.numero}/{p.total_parcelas}</td>
                       <td className="whitespace-nowrap">
                         {fmtData(p.vencimento)}
@@ -545,7 +550,7 @@ function ListaCrediario() {
         <JanelaReceber
           titulo="Receber parcela"
           valor={Number(recebendo.valor)}
-          descricao={<p><strong>{recebendo.clientes?.nome}</strong> · parcela {recebendo.numero}/{recebendo.total_parcelas} da venda nº {recebendo.venda_id} · vence {fmtData(recebendo.vencimento)}</p>}
+          descricao={<p><strong>{recebendo.clientes?.nome}</strong> · parcela {recebendo.numero}/{recebendo.total_parcelas} da venda {numeroDaVenda(recebendo.venda_id, recebendo.vendas as { codigo_local?: string | null })} · vence {fmtData(recebendo.vencimento)}</p>}
           onFechar={() => setRecebendo(null)}
           onConfirmar={async (forma) => {
             try {
