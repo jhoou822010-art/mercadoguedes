@@ -10,7 +10,8 @@ import { montarPix, normalizarChave, NOME_TIPO_CHAVE, type TipoChavePix } from "
 import { PixNaTela } from "../components/QrPix";
 import { useAuth } from "../contexts/AuthContext";
 import { useToast } from "../components/Toast";
-import { Confirmar } from "../components/Modal";
+import { Confirmar, Modal } from "../components/Modal";
+import { mostrarLogin } from "../lib/login";
 import { Aviso, Cabecalho, Carregando, Selo } from "../components/Ui";
 
 /** Venda fictícia usada só para mostrar a prévia do comprovante. */
@@ -32,6 +33,7 @@ export default function Configuracoes() {
   const avisar = useToast();
   const [usuarios, setUsuarios] = useState<Perfil[] | null>(null);
   const [mudanca, setMudanca] = useState<{ u: Perfil; papel: Papel } | null>(null);
+  const [novaSenhaDe, setNovaSenhaDe] = useState<Perfil | null>(null);
   const [processando, setProcessando] = useState(false);
   const [nomeLoja, setNomeLoja] = useState(config?.nome_loja ?? "");
   const [diasAlerta, setDiasAlerta] = useState(String(config?.dias_alerta_validade ?? 30));
@@ -370,16 +372,21 @@ export default function Configuracoes() {
           <div className="space-y-1 border-b border-slate-100 px-4 py-3 text-xs text-slate-500">
             <p><strong>Administrador:</strong> tudo — cadastra, edita preços, remove produtos, cancela vendas, vê todos os caixas, gera backup e gerencia usuários.</p>
             <p><strong>Operador (balconista):</strong> vende no caixa, dá desconto até o limite, recebe fiado e parcelas, cadastra clientes, movimenta estoque, imprime etiquetas e vê relatórios. Não altera preços, não cancela vendas, não define limite de crédito, não mexe em usuários nem em configurações.</p>
-            <p>Novos cadastros entram como <strong>aguardando liberação</strong> e não veem nada até você liberar.</p>
+            <p>Cadastre cada balconista aqui embaixo, com <strong>nome, usuário e senha</strong>: ele entra digitando só o usuário (ex.: maria) e a senha. Quem criar a própria conta pela tela de entrada fica <strong>aguardando liberação</strong> até você liberar.</p>
           </div>
+          <CadastroOperador onCriado={() => void carregar()} />
           {!usuarios ? <Carregando /> : (
             <ul className="divide-y divide-slate-100">
               {usuarios.map((u) => (
                 <li key={u.id} className="flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
                   <div className="min-w-0">
                     <p className="font-medium">{u.nome} {u.id === eu?.id && <span className="text-xs text-slate-400">(você)</span>}</p>
-                    <p className="truncate text-xs text-slate-500">{u.email} · desde {fmtDataHora(u.criado_em)}</p>
+                    <p className="truncate text-xs text-slate-500">{mostrarLogin(u.email)} · desde {fmtDataHora(u.criado_em)}</p>
                   </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                  {u.papel !== "admin" && u.id !== eu?.id && (
+                    <button type="button" className="btn-secundario btn-pequeno" onClick={() => setNovaSenhaDe(u)} title="Para quando o operador esqueceu a senha">🔑 Nova senha</button>
+                  )}
                   <select
                     className="campo w-full py-1.5 text-sm sm:w-56"
                     value={u.papel}
@@ -388,12 +395,15 @@ export default function Configuracoes() {
                   >
                     {(Object.keys(NOME_PAPEL) as Papel[]).map((p) => <option key={p} value={p}>{NOME_PAPEL[p]}</option>)}
                   </select>
+                  </div>
                 </li>
               ))}
             </ul>
           )}
         </section>
       </div>
+
+      {novaSenhaDe && <JanelaNovaSenha usuario={novaSenhaDe} onFechar={() => setNovaSenhaDe(null)} />}
 
       {teste && (
         <JanelaComprovante titulo="Comprovante de teste" onFechar={() => setTeste(false)}>
@@ -416,5 +426,118 @@ export default function Configuracoes() {
         )}
       />
     </div>
+  );
+}
+
+/* ---------------- Cadastro de operadores (SQL 0008) ---------------- */
+
+const FALTA_0008 = "Para cadastrar operadores aqui, rode antes o SQL 0008_cadastrar_operadores.sql no Supabase.";
+function erroOperador(e: unknown) {
+  const m = mensagemErro(e);
+  return /criar_operador|trocar_senha_operador|function|função/i.test(m) && /not find|não encontr|does not exist|schema cache/i.test(m) ? FALTA_0008 : m;
+}
+
+function CadastroOperador({ onCriado }: { onCriado: () => void }) {
+  const avisar = useToast();
+  const [aberto, setAberto] = useState(false);
+  const [nome, setNome] = useState("");
+  const [usuario, setUsuario] = useState("");
+  const [senha, setSenha] = useState("");
+  const [senha2, setSenha2] = useState("");
+  const [erro, setErro] = useState("");
+  const [salvando, setSalvando] = useState(false);
+
+  async function salvar(e: FormEvent) {
+    e.preventDefault();
+    setErro("");
+    const u = usuario.trim().toLowerCase();
+    if (nome.trim().length < 2) return setErro("Informe o nome do operador.");
+    if (!/^[a-z0-9][a-z0-9._-]{2,29}$/.test(u) && !u.includes("@")) return setErro("Usuário: de 3 a 30 letras sem acento, números, ponto ou traço (ex.: maria, joao.silva).");
+    if (senha.length < 6) return setErro("A senha precisa ter pelo menos 6 caracteres.");
+    if (senha !== senha2) return setErro("As duas senhas não são iguais.");
+    setSalvando(true);
+    const { error } = await supabase.rpc("criar_operador", { p_nome: nome.trim(), p_usuario: u, p_senha: senha });
+    setSalvando(false);
+    if (error) return setErro(erroOperador(error));
+    avisar("sucesso", `Operador ${nome.trim()} cadastrado. Ele entra com o usuário “${u}” e a senha que você definiu.`);
+    setNome(""); setUsuario(""); setSenha(""); setSenha2(""); setAberto(false);
+    onCriado();
+  }
+
+  if (!aberto) {
+    return (
+      <div className="border-b border-slate-100 px-4 py-3">
+        <button type="button" className="btn-acao btn-pequeno" onClick={() => setAberto(true)}>+ Cadastrar operador</button>
+      </div>
+    );
+  }
+  return (
+    <form onSubmit={salvar} className="space-y-3 border-b border-slate-100 bg-petroleo-50/40 px-4 py-4">
+      <p className="text-sm font-semibold">Novo operador (balconista)</p>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div>
+          <label className="rotulo" htmlFor="op-nome">Nome</label>
+          <input id="op-nome" className="campo" value={nome} onChange={(e) => setNome(e.target.value)} placeholder="ex.: Maria Souza" autoFocus maxLength={80} />
+          <p className="mt-1 text-xs text-slate-500">Aparece no caixa e no comprovante.</p>
+        </div>
+        <div>
+          <label className="rotulo" htmlFor="op-usuario">Usuário (para entrar)</label>
+          <input id="op-usuario" className="campo" value={usuario} onChange={(e) => setUsuario(e.target.value.replace(/\s/g, "").toLowerCase())} placeholder="ex.: maria" autoCapitalize="none" autoCorrect="off" spellCheck={false} maxLength={60} />
+          <p className="mt-1 text-xs text-slate-500">Sem espaço e sem acento. Não precisa de e-mail.</p>
+        </div>
+        <div>
+          <label className="rotulo" htmlFor="op-senha">Senha</label>
+          <input id="op-senha" type="password" className="campo" value={senha} onChange={(e) => setSenha(e.target.value)} autoComplete="new-password" minLength={6} />
+          <p className="mt-1 text-xs text-slate-500">Pelo menos 6 letras ou números.</p>
+        </div>
+        <div>
+          <label className="rotulo" htmlFor="op-senha2">Repita a senha</label>
+          <input id="op-senha2" type="password" className="campo" value={senha2} onChange={(e) => setSenha2(e.target.value)} autoComplete="new-password" minLength={6} />
+        </div>
+      </div>
+      {erro && <Aviso cor="critico">{erro}</Aviso>}
+      <div className="flex flex-wrap gap-2">
+        <button className="btn-acao" disabled={salvando}>{salvando ? "Cadastrando…" : "Cadastrar operador"}</button>
+        <button type="button" className="btn-secundario" onClick={() => { setAberto(false); setErro(""); }}>Cancelar</button>
+      </div>
+      <p className="text-xs text-slate-500">O operador entra já liberado como <strong>Operador</strong>. Para tirar o acesso depois, mude para “Aguardando liberação”.</p>
+    </form>
+  );
+}
+
+function JanelaNovaSenha({ usuario, onFechar }: { usuario: Perfil; onFechar: () => void }) {
+  const avisar = useToast();
+  const [senha, setSenha] = useState("");
+  const [senha2, setSenha2] = useState("");
+  const [erro, setErro] = useState("");
+  const [salvando, setSalvando] = useState(false);
+  async function salvar(e: FormEvent) {
+    e.preventDefault();
+    setErro("");
+    if (senha.length < 6) return setErro("A senha precisa ter pelo menos 6 caracteres.");
+    if (senha !== senha2) return setErro("As duas senhas não são iguais.");
+    setSalvando(true);
+    const { error } = await supabase.rpc("trocar_senha_operador", { p_usuario_id: usuario.id, p_senha: senha });
+    setSalvando(false);
+    if (error) return setErro(erroOperador(error));
+    avisar("sucesso", `Senha de ${usuario.nome} trocada. Passe a nova senha para ele.`);
+    onFechar();
+  }
+  return (
+    <Modal aberto titulo={`Nova senha para ${usuario.nome}`} largura="sm" onFechar={onFechar}
+      rodape={<><button className="btn-secundario" onClick={onFechar}>Cancelar</button><button className="btn-acao" form="form-nova-senha" disabled={salvando}>{salvando ? "Salvando…" : "Trocar senha"}</button></>}>
+      <form id="form-nova-senha" onSubmit={salvar} className="space-y-3">
+        <p className="text-sm text-slate-600">Login: <strong>{mostrarLogin(usuario.email)}</strong></p>
+        <div>
+          <label className="rotulo" htmlFor="ns1">Nova senha</label>
+          <input id="ns1" type="password" className="campo" value={senha} onChange={(e) => setSenha(e.target.value)} autoComplete="new-password" autoFocus />
+        </div>
+        <div>
+          <label className="rotulo" htmlFor="ns2">Repita a nova senha</label>
+          <input id="ns2" type="password" className="campo" value={senha2} onChange={(e) => setSenha2(e.target.value)} autoComplete="new-password" />
+        </div>
+        {erro && <Aviso cor="critico">{erro}</Aviso>}
+      </form>
+    </Modal>
   );
 }

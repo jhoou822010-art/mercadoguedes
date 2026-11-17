@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from "react";
+import { emailDoLogin } from "../lib/login";
 import { InstalarApp } from "../components/InstalarApp";
 import { supabase, mensagemErro } from "../lib/supabase";
 import { Logo } from "../components/Layout";
@@ -22,7 +23,7 @@ export default function Login() {
     setEnviando(true);
     try {
       if (modo === "entrar") {
-        const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password: senha });
+        const { error } = await supabase.auth.signInWithPassword({ email: emailDoLogin(email), password: senha });
         if (error) throw error;
       } else {
         const { data, error } = await supabase.auth.signUp({
@@ -58,8 +59,8 @@ export default function Login() {
             </div>
           )}
           <div>
-            <label className="rotulo" htmlFor="email">E-mail</label>
-            <input id="email" type="email" className="campo" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" required />
+            <label className="rotulo" htmlFor="email">{modo === "entrar" ? "E-mail ou usuário" : "E-mail"}</label>
+            <input id="email" type={modo === "entrar" ? "text" : "email"} className="campo" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="username" autoCapitalize="none" autoCorrect="off" spellCheck={false} placeholder={modo === "entrar" ? "ex.: maria ou seu@email.com" : undefined} required />
           </div>
           <div>
             <label className="rotulo" htmlFor="senha">Senha</label>

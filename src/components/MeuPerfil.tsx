@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from "react";
+import { mostrarLogin } from "../lib/login";
 import { supabase, mensagemErro } from "../lib/supabase";
 import { useAuth } from "../contexts/AuthContext";
 import { useToast } from "./Toast";
@@ -69,7 +70,7 @@ export function MeuPerfil({ onFechar }: { onFechar: () => void }) {
           <p className="mt-1 text-xs text-slate-400">Aparece no menu, nas vendas, no comprovante e no histórico.</p>
         </div>
         <div className="rounded-lg bg-slate-50 p-3 text-xs text-slate-600">
-          <p><strong>E-mail de login:</strong> {sessao?.user.email}</p>
+          <p><strong>Login:</strong> {mostrarLogin(sessao?.user.email)}</p>
           <p><strong>Acesso:</strong> {perfil?.papel === "admin" ? "Administrador" : perfil?.papel === "operador" ? "Operador" : "Aguardando liberação"}</p>
         </div>
         <fieldset className="space-y-3 border-t border-slate-100 pt-4">
