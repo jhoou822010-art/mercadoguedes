@@ -185,7 +185,7 @@ export default function Teclado() {
         textoConfirmar="Restaurar"
         onCancelar={() => setRestaurar(false)}
         onConfirmar={() => { setMapa(mapaAtalhos({})); setRestaurar(false); avisar("info", "Teclas padrão de volta. Clique em “Salvar teclas” para confirmar."); }}
-        mensagem={<p>Todas as ações voltam para as teclas originais do Loja Fácil. Nada é gravado até você clicar em “Salvar teclas”.</p>}
+        mensagem={<p>Todas as ações voltam para as teclas originais do Gerenciador de Mercado. Nada é gravado até você clicar em “Salvar teclas”.</p>}
       />
     </div>
   );

@@ -32,7 +32,7 @@ export default function App() {
   useEffect(() => { if (sessao) preCarregar(); }, [sessao]);
 
   if (!supabaseConfigurado) return <NaoConfigurado />;
-  if (carregando) return <Carregando texto="Abrindo o Loja Fácil…" />;
+  if (carregando) return <Carregando texto="Abrindo o Gerenciador de Mercado…" />;
   if (!sessao) return <Login />;
   if (!perfil) return erroPerfil ? <ErroPerfil /> : <Carregando texto="Carregando seu perfil…" />;
   if (perfil.papel === "pendente") return <Pendente />;

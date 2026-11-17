@@ -2,7 +2,8 @@
   "name": "loja-facil",
   "private": true,
   "version": "0.1.0",
-  "description": "Loja Fácil — Controle de loja sem complicação.",
+  "description": "Gerenciador de Mercado — sistema de gestão utilizado pelo Supermercado J.E. Guedes.",
+  "author": "Jonatha Melo",
   "type": "module",
   "scripts": {
     "dev": "vite",

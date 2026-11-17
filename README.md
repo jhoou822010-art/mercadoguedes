@@ -1,6 +1,12 @@
-# Loja Fácil
+# Gerenciador de Mercado
 
-**Controle de loja sem complicação.**
+**Gestão de caixa, vendas, estoque, fiado e crediário.**
+
+- **Autor e desenvolvedor:** Jonatha Melo
+- **Estabelecimento usuário:** Supermercado J.E. Guedes
+- **Ano de criação:** 2026
+
+© 2026 – Jonatha Melo. Os dados cadastrados no sistema pertencem ao estabelecimento usuário.
 
 Sistema de gestão interna para mercados, mercearias, padarias, açougues e pequenos comércios:
 caixa (venda com desconto, troco, fiado e comprovante não fiscal), produtos, estoque, preços, validade, etiquetas de gôndola, relatórios e backup.

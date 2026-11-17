@@ -149,8 +149,7 @@ export default function Etiquetas() {
             style={{ width: t.largura, height: t.altura }}
           >
             <div className="flex items-center justify-between bg-petroleo-700 px-[2mm] py-[0.6mm] text-[7px] font-semibold uppercase tracking-wide text-white" style={{ printColorAdjust: "exact", WebkitPrintColorAdjust: "exact" }}>
-              <span className="truncate">{config?.nome_loja ?? "Loja Fácil"}</span>
-              <span className="shrink-0 opacity-80">Loja Fácil</span>
+              <span className="truncate">{config?.nome_loja ?? "Gerenciador de Mercado"}</span>
             </div>
             <div className="flex flex-1 flex-col justify-between px-[2mm] py-[1mm]">
               <p className={`${t.nome} line-clamp-2 font-semibold uppercase leading-tight`}>{p.nome}{p.modelo ? ` ${p.modelo}` : ""}</p>

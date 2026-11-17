@@ -111,7 +111,7 @@ export function CupomVenda({ venda, config, largura }: { venda: VendaCompleta; c
       <div className="centro" style={{ fontSize: "0.85em", marginTop: 4 }}>
         Comprovante não fiscal. Não substitui NF-e, NFC-e ou cupom fiscal.
       </div>
-      <div className="centro" style={{ fontSize: "0.8em", marginTop: 2 }}>Loja Fácil</div>
+      <div className="centro" style={{ fontSize: "0.8em", marginTop: 2 }}>Gerenciador de Mercado</div>
     </div>
   );
 }
@@ -141,7 +141,7 @@ export function CupomFechamento({ r, config, largura, contado, diferenca, observ
         <div style={{ marginTop: 18 }}>Entregue por: ___________________</div>
         <div style={{ marginTop: 14 }}>Conferido por: ___________________</div>
         <hr />
-        <div className="centro" style={{ fontSize: "0.8em" }}>Documento interno · Loja Fácil</div>
+        <div className="centro" style={{ fontSize: "0.8em" }}>Documento interno · Gerenciador de Mercado</div>
       </div>
     );
   }
@@ -183,7 +183,7 @@ export function CupomFechamento({ r, config, largura, contado, diferenca, observ
       {observacao && <div>Obs.: {observacao}</div>}
       <div style={{ marginTop: 18 }}>Conferido por: ___________________</div>
       <hr />
-      <div className="centro" style={{ fontSize: "0.8em" }}>Documento interno · Loja Fácil</div>
+      <div className="centro" style={{ fontSize: "0.8em" }}>Documento interno · Gerenciador de Mercado</div>
     </div>
   );
 }
@@ -231,7 +231,7 @@ export function CupomExtrato({ titulo, cliente, telefone, linhas, total, config,
       {total > 0 && <BlocoPix config={config} valor={total} txid="EXTRATO" titulo="Pague o total com Pix" />}
       <div style={{ marginTop: 18 }}>Assinatura do cliente: _____________</div>
       <hr />
-      <div className="centro" style={{ fontSize: "0.8em" }}>Documento não fiscal · Loja Fácil</div>
+      <div className="centro" style={{ fontSize: "0.8em" }}>Documento não fiscal · Gerenciador de Mercado</div>
     </div>
   );
 }
@@ -259,7 +259,7 @@ export function CupomCarne({ venda, cliente, parcelas, config, largura }: {
         </div>
       ))}
       <hr />
-      <div className="centro" style={{ fontSize: "0.8em" }}>Documento não fiscal · Loja Fácil</div>
+      <div className="centro" style={{ fontSize: "0.8em" }}>Documento não fiscal · Gerenciador de Mercado</div>
     </div>
   );
 }

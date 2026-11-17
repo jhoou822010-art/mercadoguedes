@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from "react";
+import { RodapeAutoria } from "../components/Sobre";
 import { emailDoLogin } from "../lib/login";
 import { entrarSemInternet, guardarNoCofre } from "../lib/cofreSessoes";
 import { ehErroDeRede } from "../lib/supabase";
@@ -93,6 +94,7 @@ export default function Login() {
           )}
         </form>
         <div className="mt-4"><InstalarApp claro /></div>
+        <div className="mt-6"><RodapeAutoria claro /></div>
       </div>
     </div>
   );

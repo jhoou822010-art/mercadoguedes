@@ -47,5 +47,7 @@ export default defineConfig({
   // (.github/workflows/publicar.yml) informa esse caminho em VITE_BASE automaticamente.
   base: process.env.VITE_BASE || "/",
   plugins: [react(), tailwindcss(), paginasParaGithubPages()],
+  // Data da versão, mostrada em "Sobre o sistema".
+  define: { __VERSAO_APP__: JSON.stringify(new Date().toISOString().slice(0, 16).replace("T", " ")) },
   server: { host: true, port: 5173 },
 });

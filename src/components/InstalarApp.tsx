@@ -18,7 +18,7 @@ export function InstalarApp({ claro = false }: { claro?: boolean }) {
 
   return (
     <>
-      <button type="button" className={estilo} onClick={() => (ios ? setAjudaIos(true) : void instalar())} title="Coloca o Loja Fácil como um aplicativo, com ícone na área de trabalho ou na tela do celular">
+      <button type="button" className={estilo} onClick={() => (ios ? setAjudaIos(true) : void instalar())} title="Coloca o Gerenciador de Mercado como um aplicativo, com ícone na área de trabalho ou na tela do celular">
         ⬇ Instalar aplicativo
       </button>
       {ajudaIos && (

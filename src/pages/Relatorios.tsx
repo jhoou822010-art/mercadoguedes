@@ -121,7 +121,7 @@ export default function Relatorios() {
       <section className="cartao area-impressao">
         <div className="flex flex-wrap items-end justify-between gap-3 border-b border-slate-100 px-4 py-3">
           <div>
-            <p className="somente-impressao text-xs">{config?.nome_loja} · Loja Fácil · emitido em {fmtDataHora(new Date().toISOString())}</p>
+            <p className="somente-impressao text-xs">{config?.nome_loja} · Gerenciador de Mercado · emitido em {fmtDataHora(new Date().toISOString())}</p>
             <h2 className="font-semibold">{info.titulo}</h2>
             <p className="text-xs text-slate-500">{info.descricao}</p>
           </div>

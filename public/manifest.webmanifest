@@ -1,7 +1,7 @@
 {
-  "name": "Loja Fácil · Supermercado J.E Guedes",
-  "short_name": "Loja Fácil",
-  "description": "Caixa, estoque, vendas e crediário do Supermercado J.E Guedes.",
+  "name": "Gerenciador de Mercado · Supermercado J.E. Guedes",
+  "short_name": "Gerenciador",
+  "description": "Gerenciador de Mercado — desenvolvido por Jonatha Melo. Sistema utilizado pelo Supermercado J.E. Guedes. © 2026 – Jonatha Melo.",
   "lang": "pt-BR",
   "id": "./",
   "start_url": "./",
@@ -11,12 +11,47 @@
   "background_color": "#ffffff",
   "theme_color": "#0f4c5c",
   "icons": [
-    { "src": "icones/icone-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
-    { "src": "icones/icone-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
-    { "src": "icones/icone-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+    {
+      "src": "icones/icone-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icones/icone-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icones/icone-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
   ],
   "shortcuts": [
-    { "name": "Caixa (venda)", "short_name": "Caixa", "url": "./caixa", "icons": [{ "src": "icones/icone-192.png", "sizes": "192x192" }] },
-    { "name": "Vendas e crediário", "short_name": "Vendas", "url": "./vendas", "icons": [{ "src": "icones/icone-192.png", "sizes": "192x192" }] }
+    {
+      "name": "Caixa (venda)",
+      "short_name": "Caixa",
+      "url": "./caixa",
+      "icons": [
+        {
+          "src": "icones/icone-192.png",
+          "sizes": "192x192"
+        }
+      ]
+    },
+    {
+      "name": "Vendas e crediário",
+      "short_name": "Vendas",
+      "url": "./vendas",
+      "icons": [
+        {
+          "src": "icones/icone-192.png",
+          "sizes": "192x192"
+        }
+      ]
+    }
   ]
 }

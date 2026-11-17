@@ -105,8 +105,8 @@ export interface PreviaRestauracao { valida: boolean; motivo: string; dispositiv
 export async function conferirCopiaEmergencia(texto: string): Promise<PreviaRestauracao> {
   const vazio = { dispositivo: "", criado_em: "", recolocar: [], registros: [] };
   let c: CopiaEmergencia;
-  try { c = JSON.parse(texto); } catch { return { valida: false, motivo: "O arquivo não é uma cópia de emergência do Loja Fácil.", ...vazio }; }
-  if (c?.formato !== "loja-facil-emergencia" || typeof c.conteudo !== "string") return { valida: false, motivo: "O arquivo não é uma cópia de emergência do Loja Fácil.", ...vazio };
+  try { c = JSON.parse(texto); } catch { return { valida: false, motivo: "O arquivo não é uma cópia de emergência do Gerenciador de Mercado.", ...vazio }; }
+  if (c?.formato !== "loja-facil-emergencia" || typeof c.conteudo !== "string") return { valida: false, motivo: "O arquivo não é uma cópia de emergência do Gerenciador de Mercado.", ...vazio };
   if ((await sha256(c.conteudo)) !== c.conferencia) return { valida: false, motivo: "O arquivo está corrompido ou foi alterado (o código de conferência não bate). Nada foi gravado.", ...vazio, dispositivo: c.dispositivo, criado_em: c.criado_em };
   const { ops, registros } = JSON.parse(c.conteudo) as { ops: Operacao[]; registros: { tabela: Tabela; linha: unknown }[] };
   const atuais = new Set((await lerTodos<Operacao>("fila")).map((o) => o.id));

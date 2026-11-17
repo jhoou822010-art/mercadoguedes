@@ -1,4 +1,6 @@
 import { Suspense, useEffect, useState } from "react";
+import { SOFTWARE } from "../lib/sobre";
+import { RodapeAutoria } from "./Sobre";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import { MeuPerfil } from "./MeuPerfil";
@@ -95,9 +97,9 @@ export function Logo({ claro = false, loja, compacto = false, grande = false }: 
     <div className="flex min-w-0 items-center gap-2.5">
       <img src={`${import.meta.env.BASE_URL}favicon.svg`} alt="" className="h-9 w-9 shrink-0" />
       <div className="min-w-0 leading-tight">
-        <div className={`truncate text-lg font-bold ${claro ? "text-white" : "text-petroleo-800"}`}>{nome || "Loja Fácil"}</div>
+        <div className={`truncate text-lg font-bold ${claro ? "text-white" : "text-petroleo-800"}`}>{nome || SOFTWARE.nome}</div>
         <div className={`truncate text-[11px] ${claro ? "text-petroleo-200" : "text-slate-500"}`}>
-          {nome ? "Loja Fácil · controle de loja" : "Controle de loja sem complicação"}
+          {nome ? SOFTWARE.nome : "Gestão de caixa, estoque e vendas"}
         </div>
       </div>
     </div>
@@ -156,7 +158,7 @@ export function Layout() {
   const navegar = useNavigate();
   useEffect(() => ouvirFixarCaixa(() => navegar("/caixa")), [navegar]);
   useEffect(() => {
-    document.title = config?.nome_loja ? `${config.nome_loja} · Loja Fácil` : "Loja Fácil";
+    document.title = config?.nome_loja ? `${config.nome_loja} · ${SOFTWARE.nome}` : SOFTWARE.nome;
   }, [config?.nome_loja]);
 
   // Caixa aberto em janela separada: só o caixa, sem menu (a janela principal continua com tudo).
@@ -222,6 +224,7 @@ export function Layout() {
               <Outlet />
             </Suspense>
           </ErroTela>
+          <div className="mt-10 border-t border-slate-200/70 pt-4"><RodapeAutoria /></div>
         </div>
       </main>
       <CompraEmAndamento />

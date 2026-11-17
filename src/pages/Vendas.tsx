@@ -68,7 +68,7 @@ function TituloImpressao({ titulo }: { titulo: string }) {
   return (
     <div className="somente-impressao mb-2">
       <p className="text-lg font-bold">{config?.nome_loja ?? "Loja"} — {titulo}</p>
-      <p className="text-xs">Emitido em {fmtDataHora(new Date().toISOString())} · Loja Fácil</p>
+      <p className="text-xs">Emitido em {fmtDataHora(new Date().toISOString())} · Gerenciador de Mercado</p>
     </div>
   );
 }
