@@ -77,6 +77,9 @@ export interface Configuracoes {
   permitir_item_avulso?: boolean;
   /** Esconde totais e o valor esperado do caixa dos operadores (migração 0006). Ausente = SQL 0006 não rodado. */
   ocultar_valores_operador?: boolean;
+  /** SQL 0007 */
+  ultimo_backup_em?: string | null;
+  ultimo_backup_por?: string | null;
   /** Pix para recebimento (SQL 0006). */
   pix_tipo?: string | null;
   pix_chave?: string | null;

@@ -9,6 +9,26 @@ import { InstalarApp } from "./InstalarApp";
 import { abrirCaixaEmJanela, comprasEmAndamento, ehJanelaDoCaixa, EVENTO_CARRINHO, ouvirFixarCaixa } from "../lib/carrinho";
 import { fmtMoeda } from "../lib/format";
 
+/** Lembrete diário para o administrador baixar o backup (precisa do SQL 0007). */
+function LembreteBackup() {
+  const { ehAdmin, config } = useAuth();
+  const local = useLocation();
+  if (!ehAdmin || !config || config.ultimo_backup_em === undefined || local.pathname.endsWith("/backup")) return null;
+  const ultimo = config.ultimo_backup_em ? new Date(config.ultimo_backup_em) : null;
+  const horas = ultimo ? (Date.now() - ultimo.getTime()) / 36e5 : Infinity;
+  if (horas < 24) return null;
+  return (
+    <div className="nao-imprimir mb-4 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-atencao-500 bg-atencao-50 px-4 py-3 text-sm text-atencao-700">
+      <span>
+        📦 <strong>Faça o backup de hoje.</strong>{" "}
+        {ultimo ? `O último foi em ${ultimo.toLocaleDateString("pt-BR")} às ${ultimo.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}.` : "Nenhum backup foi feito ainda."}{" "}
+        Guarde o arquivo num pen drive ou no Google Drive.
+      </span>
+      <NavLink to="/backup" className="btn-acao btn-pequeno">Fazer backup agora</NavLink>
+    </div>
+  );
+}
+
 /** Aviso nas outras telas: tem compra no caixa esperando. Nada se perde. */
 function CompraEmAndamento() {
   const { perfil } = useAuth();
@@ -190,6 +210,7 @@ export function Layout() {
       <main className="min-w-0 flex-1 px-4 py-5 sm:px-6 lg:px-8 lg:py-8">
         <div className="mx-auto max-w-7xl">
           <SemConexao />
+          <LembreteBackup />
           <Suspense fallback={<Carregando texto="Abrindo a tela…" />}>
             <Outlet />
           </Suspense>

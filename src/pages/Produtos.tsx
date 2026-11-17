@@ -112,7 +112,7 @@ export default function Produtos() {
     const { error } = await supabase.from("produtos").delete().eq("id", removendo.id);
     setProcessando(false);
     if (error) return avisar("erro", mensagemErro(error));
-    avisar("sucesso", `Produto “${removendo.nome}” removido. O histórico de movimentações foi mantido.`);
+    avisar("sucesso", `Produto “${removendo.nome}” removido.`);
     setRemovendo(null);
     setDetalhe(null);
     void carregar();
@@ -289,8 +289,7 @@ export default function Produtos() {
         mensagem={
           <>
             <p>Você vai remover <strong>{removendo?.nome}</strong> (cód. {removendo?.codigo}) do cadastro.</p>
-            <p className="mt-2">O histórico de movimentações continua guardado. Esta ação não pode ser desfeita.</p>
-            <p className="mt-2 text-slate-500">Dica: se quiser apenas esconder o produto, edite e desmarque “Produto ativo”.</p>
+            <p className="mt-2">Só dá para remover produto que <strong>nunca foi vendido nem movimentado</strong> (ex.: cadastrado por engano). Produto com histórico é protegido: nesse caso, edite e desmarque “Produto ativo” para tirá-lo da lista.</p>
           </>
         }
       />

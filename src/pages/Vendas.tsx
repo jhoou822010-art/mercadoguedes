@@ -67,6 +67,9 @@ function TituloImpressao({ titulo }: { titulo: string }) {
   );
 }
 
+const LIMITE_VENDAS = 5000;
+const NOME_PERIODO: Record<number, string> = { 0: "de todo o período", 1: "de hoje", 7: "dos últimos 7 dias", 30: "dos últimos 30 dias", 90: "dos últimos 90 dias", 365: "dos últimos 12 meses" };
+
 function inicioPeriodo(dias: number) {
   const d = new Date();
   d.setHours(0, 0, 0, 0);
@@ -110,7 +113,11 @@ function ListaVendas() {
   const moeda = useMoeda();
   const { config, ehAdmin, tem0006, valoresOcultos } = useAuth();
   const avisar = useToast();
-  const [dias, setDias] = useState(1);
+  // Padrão: últimos 30 dias (antes era só "Hoje", e as vendas dos dias anteriores pareciam ter sumido).
+  const [dias, setDias] = useState(() => {
+    try { const v = Number(localStorage.getItem("lojafacil.vendas.periodo")); return [0, 1, 7, 30, 90, 365].includes(v) && localStorage.getItem("lojafacil.vendas.periodo") !== null ? v : 30; } catch { return 30; }
+  });
+  useEffect(() => { try { localStorage.setItem("lojafacil.vendas.periodo", String(dias)); } catch { /* sem memória */ } }, [dias]);
   const [status, setStatus] = useState<"" | "concluida" | "cancelada">("");
   const [busca, setBusca] = useState("");
   const [vendas, setVendas] = useState<VendaCompleta[] | null>(null);
@@ -119,7 +126,8 @@ function ListaVendas() {
 
   const carregar = useCallback(async () => {
     setVendas(null);
-    let q = supabase.from("vendas").select(selecaoVenda(tem0006)).gte("criado_em", inicioPeriodo(dias)).order("criado_em", { ascending: false }).limit(1000);
+    let q = supabase.from("vendas").select(selecaoVenda(tem0006)).order("criado_em", { ascending: false }).limit(LIMITE_VENDAS);
+    if (dias > 0) q = q.gte("criado_em", inicioPeriodo(dias));
     if (status) q = q.eq("status", status);
     const { data, error } = await q;
     if (error) { avisar("erro", mensagemErro(error)); setVendas([]); return; }
@@ -141,7 +149,7 @@ function ListaVendas() {
       ["Venda", "Data", "Operador", "Situação", "Subtotal", "Desconto", "Total", "Pagamentos", "Troco", "Cliente", "Itens"],
       lista.map((v) => [v.id, fmtDataHora(v.criado_em), v.usuario_nome, v.status === "concluida" ? "Concluída" : "Cancelada",
         Number(v.subtotal), Number(v.desconto), Number(v.total),
-        v.venda_pagamentos.map((p) => `${NOME_FORMA[p.forma]} ${moeda(p.valor)}`).join(" + "), Number(v.troco), v.cliente_nome,
+        v.venda_pagamentos.map((p) => `${NOME_FORMA[p.forma]} ${fmtMoeda(p.valor)}`).join(" + "), Number(v.troco), v.cliente_nome,
         v.venda_itens.map((i) => `${i.quantidade} ${i.unidade} ${i.produto_nome}`).join(" | ")]));
     avisar("sucesso", `${lista.length} venda(s) exportada(s).`);
   }
@@ -152,7 +160,7 @@ function ListaVendas() {
         <div>
           <label className="rotulo" htmlFor="per">Período</label>
           <select id="per" className="campo" value={dias} onChange={(e) => setDias(Number(e.target.value))}>
-            <option value={1}>Hoje</option><option value={7}>Últimos 7 dias</option><option value={30}>Últimos 30 dias</option><option value={90}>Últimos 90 dias</option>
+            <option value={1}>Hoje</option><option value={7}>Últimos 7 dias</option><option value={30}>Últimos 30 dias</option><option value={90}>Últimos 90 dias</option><option value={365}>Últimos 12 meses</option><option value={0}>Todo o período</option>
           </select>
         </div>
         <div>
@@ -171,6 +179,13 @@ function ListaVendas() {
         </div>
       </div>
 
+      {vendas && (
+        <p className="mb-3 text-sm text-slate-600">
+          Mostrando <strong>{lista.length}</strong> venda(s) <strong>{NOME_PERIODO[dias] ?? `dos últimos ${dias} dias`}</strong>.
+          {dias !== 0 && <> Não achou uma venda? Escolha <button type="button" className="font-semibold text-petroleo-700 underline" onClick={() => setDias(0)}>todo o período</button>.</>}
+          {vendas.length >= LIMITE_VENDAS && <> Mostrando as {LIMITE_VENDAS} mais recentes; use a busca ou um período menor.</>}
+        </p>
+      )}
       {vendas && !valoresOcultos && (
         <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
           <div className="cartao p-4"><p className="text-xs uppercase text-slate-500">Vendas concluídas</p><p className="text-2xl font-bold">{concluidas.length}</p></div>
