@@ -6,6 +6,7 @@ import { LOGO_PADRAO } from "../lib/marca";
 import { Carregando } from "./Ui";
 import { SemConexao } from "./SemConexao";
 import { InstalarApp } from "./InstalarApp";
+import { ErroTela } from "./ErroTela";
 import { abrirCaixaEmJanela, comprasEmAndamento, ehJanelaDoCaixa, EVENTO_CARRINHO, ouvirFixarCaixa } from "../lib/carrinho";
 import { fmtMoeda } from "../lib/format";
 
@@ -166,9 +167,11 @@ export function Layout() {
         </header>
         <main className="min-w-0 px-3 py-3 sm:px-4">
           <SemConexao />
-          <Suspense fallback={<Carregando texto="Abrindo a tela…" />}>
-            <Outlet />
-          </Suspense>
+          <ErroTela key={local.pathname}>
+            <Suspense fallback={<Carregando texto="Abrindo a tela…" />}>
+              <Outlet />
+            </Suspense>
+          </ErroTela>
         </main>
       </div>
     );
@@ -211,9 +214,11 @@ export function Layout() {
         <div className="mx-auto max-w-7xl">
           <SemConexao />
           <LembreteBackup />
-          <Suspense fallback={<Carregando texto="Abrindo a tela…" />}>
-            <Outlet />
-          </Suspense>
+          <ErroTela key={local.pathname}>
+            <Suspense fallback={<Carregando texto="Abrindo a tela…" />}>
+              <Outlet />
+            </Suspense>
+          </ErroTela>
         </div>
       </main>
       <CompraEmAndamento />
