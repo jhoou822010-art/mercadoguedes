@@ -5,6 +5,7 @@ import { MeuPerfil } from "./MeuPerfil";
 import { LOGO_PADRAO } from "../lib/marca";
 import { Carregando } from "./Ui";
 import { IndicadorConexao, SemConexao } from "./SemConexao";
+import { MantemCopiaLocal } from "./CopiaLocal";
 import { InstalarApp } from "./InstalarApp";
 import { ErroTela } from "./ErroTela";
 import { abrirCaixaEmJanela, comprasEmAndamento, ehJanelaDoCaixa, EVENTO_CARRINHO, ouvirFixarCaixa } from "../lib/carrinho";
@@ -224,6 +225,7 @@ export function Layout() {
         </div>
       </main>
       <CompraEmAndamento />
+      <MantemCopiaLocal />
     </div>
   );
 }

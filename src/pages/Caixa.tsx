@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { doServidorOuLocal } from "../lib/local/fallback";
+import { produtosPorIds } from "../lib/local/consultas";
 import { useNavigate } from "react-router-dom";
 import { supabase, mensagemErro } from "../lib/supabase";
 import { centavos, dividirParcelas, fmtData, fmtDataHora, fmtMoeda, fmtQtd, hojeISO, lerNumero, NOME_FORMA, somarMeses } from "../lib/format";
@@ -178,7 +180,9 @@ function PontoDeVenda({ caixa, onFechado }: { caixa: TCaixa; onFechado: () => vo
     if (!podePagar) return avisar("erro", erroDesconto || "Confira os itens marcados em vermelho.");
     // Confere preço e estoque atuais antes de cobrar.
     const ids = itens.filter((i) => !i.avulso).map((i) => i.p.id);
-    const { data } = ids.length ? await supabase.from("vw_produtos").select("*").in("id", ids) : { data: [] };
+    const { data } = ids.length
+      ? await doServidorOuLocal<ProdutoView[]>(() => supabase.from("vw_produtos").select("*").in("id", ids), () => produtosPorIds(ids), { espera: 4000 })
+      : { data: [] as ProdutoView[] };
     const atuais = new Map(((data ?? []) as ProdutoView[]).map((p) => [p.id, p]));
     const mudou = itens.some((i) => {
       const a = atuais.get(i.p.id);

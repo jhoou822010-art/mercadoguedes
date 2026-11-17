@@ -1,4 +1,6 @@
 import { useEffect, useState } from "react";
+import { doServidorOuLocal } from "../lib/local/fallback";
+import { produtoLocal, produtosLocais } from "../lib/local/consultas";
 import { useSearchParams } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import { fmtMoeda } from "../lib/format";
@@ -29,7 +31,10 @@ export default function Etiquetas() {
   useEffect(() => {
     const id = params.get("produto");
     if (!id) return;
-    supabase.from("vw_produtos").select("*").eq("id", id).maybeSingle().then(({ data }) => {
+    void doServidorOuLocal<ProdutoView | null>(
+      () => supabase.from("vw_produtos").select("*").eq("id", id).maybeSingle(),
+      () => produtoLocal(Number(id)),
+    ).then(({ data }) => {
       if (data) setItens([{ p: data as ProdutoView, copias: 1 }]);
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -45,7 +50,10 @@ export default function Etiquetas() {
   }
 
   async function adicionarTodos() {
-    const { data } = await supabase.from("vw_produtos").select("*").eq("ativo", true).order("nome").limit(500);
+    const { data } = await doServidorOuLocal<ProdutoView[]>(
+      () => supabase.from("vw_produtos").select("*").eq("ativo", true).order("nome").limit(500),
+      async () => (await produtosLocais()).filter((p) => p.ativo).sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR")).slice(0, 500),
+    );
     const lista = (data ?? []) as ProdutoView[];
     setItens(lista.map((p) => ({ p, copias: 1 })));
     avisar("info", `${lista.length} produto(s) ativos adicionados.`);

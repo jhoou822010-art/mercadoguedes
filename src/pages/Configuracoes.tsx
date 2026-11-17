@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
+import { doServidorOuLocal } from "../lib/local/fallback";
+import { perfisLocal } from "../lib/local/consultas";
 import { supabase, mensagemErro } from "../lib/supabase";
 import { cnpjValido, fmtDataHora, lerNumero, mascaraCnpj } from "../lib/format";
 import type { Configuracoes as TConfig, Papel, Perfil, VendaCompleta } from "../lib/types";
@@ -97,7 +99,10 @@ export default function Configuracoes() {
   }
 
   const carregar = useCallback(async () => {
-    const { data, error } = await supabase.from("perfis").select("*").order("criado_em");
+    const { data, error } = await doServidorOuLocal<Perfil[]>(
+      () => supabase.from("perfis").select("*").order("criado_em"),
+      perfisLocal,
+    );
     if (error) return avisar("erro", mensagemErro(error));
     setUsuarios(data as Perfil[]);
   }, [avisar]);

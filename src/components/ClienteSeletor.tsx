@@ -1,4 +1,6 @@
 import { useEffect, useState } from "react";
+import { doServidorOuLocal } from "../lib/local/fallback";
+import { clientesLocal, parcelasLocal } from "../lib/local/consultas";
 import { supabase, mensagemErro } from "../lib/supabase";
 import { termoBusca } from "../lib/data";
 import { fmtMoeda } from "../lib/format";
@@ -25,9 +27,13 @@ export function ClienteSeletor({ escolhido, onEscolher }: { escolhido: Cliente |
     const t = termoBusca(texto);
     if (!t) { setLista([]); return; }
     const id = setTimeout(async () => {
-      const { data } = await supabase.from("clientes").select("*").eq("ativo", true)
-        .or(`nome.ilike.*${t}*,telefone.ilike.*${t}*,cpf.ilike.*${t}*`).order("nome").limit(8);
-      setLista((data ?? []) as Cliente[]);
+      const { data } = await doServidorOuLocal<Cliente[]>(
+        () => supabase.from("clientes").select("*").eq("ativo", true)
+          .or(`nome.ilike.*${t}*,telefone.ilike.*${t}*,cpf.ilike.*${t}*`).order("nome").limit(8),
+        () => clientesLocal({ termo: texto, somenteAtivos: true, limite: 8 }),
+        { espera: 4000 },
+      );
+      setLista(data ?? []);
     }, 250);
     return () => clearTimeout(id);
   }, [texto]);
@@ -36,8 +42,10 @@ export function ClienteSeletor({ escolhido, onEscolher }: { escolhido: Cliente |
   useEffect(() => {
     setEmAberto(null);
     if (!escolhido) return;
-    supabase.from("parcelas").select("valor").eq("cliente_id", escolhido.id).eq("status", "aberta")
-      .then(({ data }) => setEmAberto((data ?? []).reduce((s, p) => s + Number(p.valor), 0)));
+    void doServidorOuLocal<{ valor: number }[]>(
+      () => supabase.from("parcelas").select("valor").eq("cliente_id", escolhido.id).eq("status", "aberta"),
+      () => parcelasLocal({ clienteId: escolhido.id, status: "aberta" }),
+    ).then(({ data }) => setEmAberto((data ?? []).reduce((s, p) => s + Number(p.valor), 0)));
   }, [escolhido]);
 
   async function cadastrar() {

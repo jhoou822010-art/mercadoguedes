@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useConexao } from "../lib/conexao";
 import { useAuth } from "../contexts/AuthContext";
+import { quando, useEstadoCopia } from "./CopiaLocal";
 
 const ROTULO = {
   online: { texto: "Online", cor: "bg-ok-600", dica: "Conectado ao servidor." },
@@ -12,11 +13,14 @@ const ROTULO = {
 /** Indicador discreto de conexão (fica no menu). */
 export function IndicadorConexao({ claro = true }: { claro?: boolean }) {
   const { estado } = useConexao();
+  const copia = useEstadoCopia();
   const r = ROTULO[estado];
+  const dica = `${r.dica}\nCópia dos dados neste computador: ${quando(copia.ultima)}${copia.rodando ? " (atualizando agora)" : ""}${copia.erro ? `\nÚltima atualização da cópia falhou: ${copia.erro}` : ""}`;
   return (
-    <span className={`inline-flex items-center gap-1.5 text-xs font-medium ${claro ? "text-petroleo-100" : "text-slate-600"}`} title={r.dica} role="status" aria-label={`Conexão: ${r.texto}`}>
-      <span className={`h-2.5 w-2.5 rounded-full ${r.cor} ${estado === "verificando" ? "animate-pulse" : ""}`} aria-hidden="true" />
+    <span className={`inline-flex flex-wrap items-center gap-1.5 text-xs font-medium ${claro ? "text-petroleo-100" : "text-slate-600"}`} title={dica} role="status" aria-label={`Conexão: ${r.texto}`}>
+      <span className={`h-2.5 w-2.5 rounded-full ${r.cor} ${estado === "verificando" || copia.rodando ? "animate-pulse" : ""}`} aria-hidden="true" />
       {r.texto}
+      {copia.rodando && <span className="font-normal opacity-80">· atualizando cópia…</span>}
     </span>
   );
 }
@@ -25,6 +29,7 @@ export function IndicadorConexao({ claro = true }: { claro?: boolean }) {
 export function SemConexao() {
   const { estado } = useConexao();
   const { perfilOffline, perfilConferidoEm } = useAuth();
+  const copia = useEstadoCopia();
   const [voltou, setVoltou] = useState(false);
   const anterior = useRef(estado);
 
@@ -42,10 +47,9 @@ export function SemConexao() {
     return (
       <div role="alert" className="nao-imprimir mb-4 rounded-lg border-l-4 border-critico-600 bg-critico-50 px-4 py-3 text-sm text-critico-700">
         <strong>{estado === "offline" ? "Sem internet." : "O servidor não está respondendo."}</strong>{" "}
-        O sistema continua aberto neste computador
-        {perfilOffline && perfilConferidoEm ? ` (seu acesso foi conferido pela última vez em ${new Date(perfilConferidoEm).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })})` : ""}.
-        Nesta versão, as telas que mostram ou gravam dados (vendas, estoque, cadastros) ainda precisam do servidor: elas voltam a funcionar quando a conexão voltar.
-        Se estiver no meio de uma venda, os itens ficam guardados.
+        As telas mostram a <strong>cópia guardada neste computador</strong> (atualizada em {quando(copia.ultima)}).
+        {perfilOffline && perfilConferidoEm ? ` Seu acesso foi conferido pela última vez em ${quando(perfilConferidoEm)}.` : ""}
+        {" "}Nesta versão, <strong>gravar</strong> (vender, movimentar estoque, cadastrar) ainda precisa do servidor; se estiver no meio de uma venda, os itens ficam guardados.
       </div>
     );
   }

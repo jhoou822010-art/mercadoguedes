@@ -1,4 +1,6 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { doServidorOuLocal } from "../lib/local/fallback";
+import { categoriasEFornecedoresLocal, listarProdutosLocal, movimentacoesLocal } from "../lib/local/consultas";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { supabase, mensagemErro } from "../lib/supabase";
 import { buscarTodos, termoBusca } from "../lib/data";
@@ -57,26 +59,43 @@ export default function Produtos() {
     return () => clearTimeout(t);
   }, [busca]);
 
+  const totalLocal = useRef(0);
   const carregarListas = useCallback(async () => {
-    const { data } = await supabase.from("produtos").select("categoria, fornecedor").limit(5000);
-    const unicos = (k: "categoria" | "fornecedor") =>
-      [...new Set((data ?? []).map((d) => d[k]).filter(Boolean) as string[])].sort((a, b) => a.localeCompare(b, "pt-BR"));
-    setCategorias(unicos("categoria"));
-    setFornecedores(unicos("fornecedor"));
+    const { data } = await doServidorOuLocal(
+      async () => {
+        const r = await supabase.from("produtos").select("categoria, fornecedor").limit(5000);
+        const unicos = (k: "categoria" | "fornecedor") =>
+          [...new Set((r.data ?? []).map((d) => d[k]).filter(Boolean) as string[])].sort((a, b) => a.localeCompare(b, "pt-BR"));
+        return { data: r.error ? null : { categorias: unicos("categoria"), fornecedores: unicos("fornecedor") }, error: r.error };
+      },
+      categoriasEFornecedoresLocal,
+    );
+    setCategorias(data?.categorias ?? []);
+    setFornecedores(data?.fornecedores ?? []);
   }, []);
 
   const carregar = useCallback(async () => {
     setErro("");
-    let q = supabase.from("vw_produtos").select("*", { count: "exact" });
-    if (situacao !== "todos") q = q.eq("ativo", situacao === "ativos");
-    if (categoria) q = q.eq("categoria", categoria);
-    if (alerta === "minimo") q = q.eq("abaixo_minimo", true);
-    if (alerta === "validade") q = q.in("situacao_validade", ["vencido", "critico", "proximo"]);
-    if (alerta === "vencidos") q = q.eq("situacao_validade", "vencido");
     const t = termoBusca(buscaAplicada);
-    if (t) q = q.or(`nome.ilike.*${t}*,codigo.ilike.*${t}*,barras.ilike.*${t}*,categoria.ilike.*${t}*,fornecedor.ilike.*${t}*`);
-    q = alerta === "validade" || alerta === "vencidos" ? q.order("validade") : q.order("nome");
-    const { data, error, count } = await q.range(pagina * POR_PAGINA, pagina * POR_PAGINA + POR_PAGINA - 1);
+    const { data, error, count } = await doServidorOuLocal<ProdutoView[]>(
+      () => {
+        let q = supabase.from("vw_produtos").select("*", { count: "exact" });
+        if (situacao !== "todos") q = q.eq("ativo", situacao === "ativos");
+        if (categoria) q = q.eq("categoria", categoria);
+        if (alerta === "minimo") q = q.eq("abaixo_minimo", true);
+        if (alerta === "validade") q = q.in("situacao_validade", ["vencido", "critico", "proximo"]);
+        if (alerta === "vencidos") q = q.eq("situacao_validade", "vencido");
+        if (t) q = q.or(`nome.ilike.*${t}*,codigo.ilike.*${t}*,barras.ilike.*${t}*,categoria.ilike.*${t}*,fornecedor.ilike.*${t}*`);
+        q = alerta === "validade" || alerta === "vencidos" ? q.order("validade") : q.order("nome");
+        return q.range(pagina * POR_PAGINA, pagina * POR_PAGINA + POR_PAGINA - 1) as unknown as PromiseLike<{ data: ProdutoView[] | null; error: unknown; count: number | null }>;
+      },
+      async () => {
+        const r = await listarProdutosLocal({ situacao, categoria, alerta: alerta ?? "", busca: buscaAplicada, pagina, porPagina: POR_PAGINA });
+        totalLocal.current = r.total;
+        return r.lista;
+      },
+      { contar: () => totalLocal.current },
+    );
     if (error) {
       setErro(mensagemErro(error));
       setLista([]);
@@ -300,8 +319,10 @@ export default function Produtos() {
 function DetalheProduto({ p, ehAdmin, onFechar, onEditar, onRemover }: { p: ProdutoView; ehAdmin: boolean; onFechar: () => void; onEditar: () => void; onRemover: () => void }) {
   const [movs, setMovs] = useState<Movimentacao[] | null>(null);
   useEffect(() => {
-    supabase.from("movimentacoes").select("*").eq("produto_id", p.id).order("criado_em", { ascending: false }).limit(20)
-      .then(({ data }) => setMovs((data ?? []) as Movimentacao[]));
+    void doServidorOuLocal<Movimentacao[]>(
+      () => supabase.from("movimentacoes").select("*").eq("produto_id", p.id).order("criado_em", { ascending: false }).limit(20),
+      async () => (await movimentacoesLocal({ produtoId: p.id, limite: 20 })).lista,
+    ).then(({ data }) => setMovs(data ?? []));
   }, [p.id]);
 
   const linha = (rotulo: string, valor: React.ReactNode) => (

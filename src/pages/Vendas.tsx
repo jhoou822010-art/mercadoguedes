@@ -1,4 +1,8 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
+import { doServidorOuLocal } from "../lib/local/fallback";
+import { caixasLocal, clientesLocal, fiadosLocal, parcelasLocal, vendasLocal } from "../lib/local/consultas";
+import { estadoConexaoAgora } from "../lib/conexao";
+import { ehErroDeRede } from "../lib/supabase";
 import { useSearchParams } from "react-router-dom";
 import { supabase, mensagemErro } from "../lib/supabase";
 import { baixarCsv, hojeArquivo } from "../lib/csv";
@@ -126,10 +130,15 @@ function ListaVendas() {
 
   const carregar = useCallback(async () => {
     setVendas(null);
-    let q = supabase.from("vendas").select(selecaoVenda(tem0006)).order("criado_em", { ascending: false }).limit(LIMITE_VENDAS);
-    if (dias > 0) q = q.gte("criado_em", inicioPeriodo(dias));
-    if (status) q = q.eq("status", status);
-    const { data, error } = await q;
+    const { data, error } = await doServidorOuLocal<VendaCompleta[]>(
+      () => {
+        let q = supabase.from("vendas").select(selecaoVenda(tem0006)).order("criado_em", { ascending: false }).limit(LIMITE_VENDAS);
+        if (dias > 0) q = q.gte("criado_em", inicioPeriodo(dias));
+        if (status) q = q.eq("status", status);
+        return q as unknown as PromiseLike<{ data: VendaCompleta[] | null; error: unknown }>;
+      },
+      () => vendasLocal({ desde: dias > 0 ? inicioPeriodo(dias) : undefined, status: status || undefined, limite: LIMITE_VENDAS }),
+    );
     if (error) { avisar("erro", mensagemErro(error)); setVendas([]); return; }
     setVendas(data as unknown as VendaCompleta[]);
   }, [dias, status, avisar, tem0006]);
@@ -298,11 +307,16 @@ function ListaFiado() {
 
   const carregar = useCallback(async () => {
     setLista(null);
-    let q = supabase.from("venda_pagamentos")
-      .select("*, vendas!inner(id, cliente_nome, cliente_telefone, criado_em, status, usuario_nome)")
-      .eq("forma", "fiado").eq("vendas.status", "concluida").order("id", { ascending: false }).limit(2000);
-    q = mostrarRecebidos ? q.not("fiado_recebido_em", "is", null) : q.is("fiado_recebido_em", null);
-    const { data, error } = await q;
+    const { data, error } = await doServidorOuLocal<FiadoLinha[]>(
+      () => {
+        let q = supabase.from("venda_pagamentos")
+          .select("*, vendas!inner(id, cliente_nome, cliente_telefone, criado_em, status, usuario_nome)")
+          .eq("forma", "fiado").eq("vendas.status", "concluida").order("id", { ascending: false }).limit(2000);
+        q = mostrarRecebidos ? q.not("fiado_recebido_em", "is", null) : q.is("fiado_recebido_em", null);
+        return q as unknown as PromiseLike<{ data: FiadoLinha[] | null; error: unknown }>;
+      },
+      async () => (await fiadosLocal(mostrarRecebidos)).slice(0, 2000) as unknown as FiadoLinha[],
+    );
     if (error) { avisar("erro", mensagemErro(error)); setLista([]); return; }
     setLista(data as unknown as FiadoLinha[]);
   }, [mostrarRecebidos, avisar]);
@@ -422,13 +436,18 @@ function ListaCrediario() {
 
   const carregar = useCallback(async () => {
     setLista(null);
-    let q = supabase.from("parcelas").select("*, clientes(nome, telefone), vendas!inner(id, criado_em, status, total)").limit(3000);
-    if (filtro === "pagas") q = q.eq("status", "paga").order("pago_em", { ascending: false });
-    else {
-      q = q.eq("status", "aberta").order("vencimento");
-      if (filtro === "atrasadas") q = q.lt("vencimento", hojeISO());
-    }
-    const { data, error } = await q;
+    const { data, error } = await doServidorOuLocal<ParcelaLinha[]>(
+      () => {
+        let q = supabase.from("parcelas").select("*, clientes(nome, telefone), vendas!inner(id, criado_em, status, total)").limit(3000);
+        if (filtro === "pagas") q = q.eq("status", "paga").order("pago_em", { ascending: false });
+        else {
+          q = q.eq("status", "aberta").order("vencimento");
+          if (filtro === "atrasadas") q = q.lt("vencimento", hojeISO());
+        }
+        return q as unknown as PromiseLike<{ data: ParcelaLinha[] | null; error: unknown }>;
+      },
+      async () => (await parcelasLocal({ status: filtro === "pagas" ? "paga" : "aberta", atrasadas: filtro === "atrasadas" })).slice(0, 3000) as unknown as ParcelaLinha[],
+    );
     if (error) { avisar("erro", mensagemErro(error)); setLista([]); return; }
     setLista(data as unknown as ParcelaLinha[]);
   }, [filtro, avisar]);
@@ -440,7 +459,10 @@ function ListaCrediario() {
   const atrasado = visiveis.filter((p) => p.status === "aberta" && diasAte(p.vencimento) < 0).reduce((s, p) => s + Number(p.valor), 0);
 
   async function abrirCarne(p: ParcelaLinha) {
-    const { data, error } = await supabase.from("parcelas").select("*").eq("venda_id", p.venda_id).order("numero");
+    const { data, error } = await doServidorOuLocal<Parcela[]>(
+      () => supabase.from("parcelas").select("*").eq("venda_id", p.venda_id).order("numero"),
+      () => parcelasLocal({ vendaId: p.venda_id }),
+    );
     if (error) return avisar("erro", mensagemErro(error));
     setCarne({ venda: p.vendas, cliente: p.clientes?.nome ?? "—", parcelas: data as Parcela[] });
   }
@@ -543,14 +565,21 @@ function ListaClientes() {
   const [extrato, setExtrato] = useState<{ c: Cliente; parcelas: Parcela[] } | null>(null);
 
   const carregar = useCallback(async () => {
-    const [c, p] = await Promise.all([
-      supabase.from("clientes").select("*").order("nome").limit(5000),
-      supabase.from("parcelas").select("cliente_id, valor").eq("status", "aberta").limit(10000),
-    ]);
-    if (c.error) { avisar("erro", mensagemErro(c.error)); setClientes([]); return; }
-    setClientes(c.data as Cliente[]);
+    type Dados = { c: Cliente[]; p: { cliente_id: number; valor: number }[] };
+    const r = await doServidorOuLocal<Dados>(
+      async () => {
+        const [c, p] = await Promise.all([
+          supabase.from("clientes").select("*").order("nome").limit(5000),
+          supabase.from("parcelas").select("cliente_id, valor").eq("status", "aberta").limit(10000),
+        ]);
+        return { data: c.error ? null : { c: c.data as Cliente[], p: (p.data ?? []) as Dados["p"] }, error: c.error };
+      },
+      async () => ({ c: await clientesLocal(), p: await parcelasLocal({ status: "aberta" }) }),
+    );
+    if (r.error) { avisar("erro", mensagemErro(r.error)); setClientes([]); return; }
+    setClientes(r.data.c);
     const m: Record<number, number> = {};
-    for (const x of (p.data ?? []) as { cliente_id: number; valor: number }[]) m[x.cliente_id] = (m[x.cliente_id] ?? 0) + Number(x.valor);
+    for (const x of r.data.p) m[x.cliente_id] = (m[x.cliente_id] ?? 0) + Number(x.valor);
     setAbertoPorCliente(m);
   }, [avisar]);
   useEffect(() => { void carregar(); }, [carregar]);
@@ -559,7 +588,10 @@ function ListaClientes() {
   const visiveis = (clientes ?? []).filter((c) => (mostrarInativos || c.ativo) && (!t || c.nome.toLowerCase().includes(t) || (c.telefone ?? "").includes(t) || (c.cpf ?? "").includes(t)));
 
   async function verExtrato(c: Cliente) {
-    const { data, error } = await supabase.from("parcelas").select("*").eq("cliente_id", c.id).eq("status", "aberta").order("vencimento");
+    const { data, error } = await doServidorOuLocal<Parcela[]>(
+      () => supabase.from("parcelas").select("*").eq("cliente_id", c.id).eq("status", "aberta").order("vencimento"),
+      () => parcelasLocal({ clienteId: c.id, status: "aberta" }),
+    );
     if (error) return avisar("erro", mensagemErro(error));
     setExtrato({ c, parcelas: data as Parcela[] });
   }
@@ -712,13 +744,18 @@ function JanelaCliente({ cliente, ehAdmin, onFechar, onSalvo }: { cliente: Clien
 
 function ListaCaixas() {
   const moeda = useMoeda();
-  const { config, ehAdmin, valoresOcultos } = useAuth();
+  const { config, ehAdmin, valoresOcultos, perfil } = useAuth();
   const avisar = useToast();
   const [caixas, setCaixas] = useState<Caixa[] | null>(null);
   const [resumo, setResumo] = useState<{ c: Caixa; r: ResumoCaixa } | null>(null);
 
   useEffect(() => {
     (async () => {
+      // Sem servidor: os caixas guardados neste computador.
+      if (["offline", "servidor"].includes(estadoConexaoAgora())) {
+        setCaixas((await caixasLocal(ehAdmin ? null : perfil?.id ?? null)).slice(0, 300) as unknown as Caixa[]);
+        return;
+      }
       // SQL 0006: listar_caixas (respeita o fechamento cego). Antes dele: leitura direta.
       const r = await supabase.rpc("listar_caixas", { p_limite: 300 });
       if (!r.error) return setCaixas(r.data as Caixa[]);
@@ -733,7 +770,7 @@ function ListaCaixas() {
   async function ver(c: Caixa) {
     if (c.status === "fechado" && c.resumo) return setResumo({ c, r: c.resumo });
     const { data, error } = await supabase.rpc("resumo_caixa", { p_caixa_id: c.id });
-    if (error) return avisar("erro", mensagemErro(error));
+    if (error) return avisar("erro", ehErroDeRede(error) ? "O resumo de um caixa aberto precisa de conexão com o servidor." : mensagemErro(error));
     setResumo({ c, r: data as ResumoCaixa });
   }
 

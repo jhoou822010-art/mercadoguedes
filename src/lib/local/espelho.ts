@@ -1,0 +1,199 @@
+/*
+  CÓPIA DOS DADOS DO SERVIDOR PARA ESTE COMPUTADOR ("descida").
+
+  Com internet, de tempos em tempos (e ao voltar a conexão) baixa do Supabase
+  SÓ o que mudou desde a última vez (coluna atualizado_em, SQL 0009) e guarda
+  no banco local. Sem internet, as telas leem dessa cópia.
+
+  - Nunca envia nada ao servidor (isso é a "subida", na etapa do caixa offline).
+  - Se a mesma linha vier duas vezes, só é regravada (sem duplicar).
+  - Margem de 5 minutos para trás em cada busca, para não perder alterações
+    gravadas no servidor quase ao mesmo tempo.
+*/
+import { supabase } from "../supabase";
+import { COLUNAS_CAIXA, selecaoVenda } from "../consultas";
+import { apagarVarios, gravarMeta, gravarVarios, lerMeta, lerTodos, limparTabela, type Tabela } from "./idb";
+
+const PAGINA = 1000;
+const MARGEM_MS = 5 * 60_000;
+/** Na primeira cópia, vendas e movimentações dos últimos 180 dias (+ todo fiado/parcela em aberto). */
+const JANELA_DIAS = 180;
+
+type Res<T> = { data: T[] | null; error: { message: string; code?: string } | null };
+
+export interface EstadoEspelho {
+  rodando: boolean;
+  ultima: string | null; // última cópia completa com sucesso
+  erro: string;
+  temIncremental: boolean | null; // SQL 0009 rodado?
+}
+let estado: EstadoEspelho = { rodando: false, ultima: null, erro: "", temIncremental: null };
+const ouvintes = new Set<() => void>();
+const mudar = (p: Partial<EstadoEspelho>) => { estado = { ...estado, ...p }; ouvintes.forEach((f) => f()); };
+export const estadoEspelho = () => estado;
+export function ouvirEspelho(f: () => void) { ouvintes.add(f); return () => { ouvintes.delete(f); }; }
+void lerMeta<string>("ultima_copia").then((u) => { if (u) mudar({ ultima: u }); }).catch(() => {});
+
+/** Busca todas as páginas de uma consulta (o servidor devolve no máximo 1000 por vez). */
+async function todasAsPaginas<T>(montar: () => { range: (a: number, b: number) => PromiseLike<Res<T>> }): Promise<T[]> {
+  const tudo: T[] = [];
+  for (let de = 0; ; de += PAGINA) {
+    const { data, error } = await montar().range(de, de + PAGINA - 1);
+    if (error) throw error;
+    tudo.push(...(data ?? []));
+    if (!data || data.length < PAGINA) return tudo;
+  }
+}
+
+const recuar = (iso: string) => new Date(new Date(iso).getTime() - MARGEM_MS).toISOString();
+const maiorData = (linhas: { atualizado_em?: string }[], atual?: string) =>
+  linhas.reduce<string | undefined>((m, l) => (l.atualizado_em && (!m || l.atualizado_em > m) ? l.atualizado_em : m), atual);
+
+async function temColunaAtualizado(): Promise<boolean> {
+  const { error } = await supabase.from("vendas").select("atualizado_em").limit(1);
+  return !error;
+}
+
+/** Tabela pequena (produtos, clientes, perfis): incremental + remove o que foi apagado no servidor. */
+async function copiarPequena(tabela: Tabela, origem: string, incremental: boolean) {
+  const cursor = await lerMeta<string>(`cursor.${tabela}`);
+  const linhas = await todasAsPaginas<{ id: number | string; atualizado_em?: string }>(() => {
+    let q = supabase.from(origem).select("*").order("id");
+    if (incremental && cursor) q = q.gte("atualizado_em", recuar(cursor));
+    return q;
+  });
+  await gravarVarios(tabela, linhas);
+  // Apagados no servidor (ex.: produto cadastrado por engano): confere a lista de códigos.
+  const ids = new Set((await todasAsPaginas<{ id: number | string }>(() => supabase.from(origem).select("id").order("id"))).map((l) => l.id));
+  const locais = await lerTodos<{ id: number | string }>(tabela);
+  await apagarVarios(tabela, locais.filter((l) => !ids.has(l.id)).map((l) => l.id));
+  const novo = maiorData(linhas, cursor);
+  if (novo) await gravarMeta(`cursor.${tabela}`, novo);
+}
+
+async function buscarVendasPorIds(ids: number[], tem0006: boolean) {
+  const unicos = [...new Set(ids)];
+  for (let i = 0; i < unicos.length; i += 200) {
+    const pedaco = unicos.slice(i, i + 200);
+    const { data, error } = await supabase.from("vendas").select(selecaoVenda(tem0006)).in("id", pedaco);
+    if (error) throw error;
+    await gravarVarios("vendas", data ?? []);
+  }
+}
+
+/** O servidor foi zerado (limpeza dos testes)? Então zera a cópia de vendas também. */
+async function conferirZerado() {
+  const { data } = await supabase.from("vendas").select("id").order("id", { ascending: false }).limit(1);
+  const maiorServidor = (data?.[0] as { id: number } | undefined)?.id ?? 0;
+  const locais = await lerTodos<{ id: number }>("vendas");
+  const maiorLocal = locais.reduce((m, v) => (typeof v.id === "number" && v.id > m ? v.id : m), 0);
+  if (maiorLocal > maiorServidor) {
+    for (const t of ["vendas", "parcelas", "caixas", "movimentacoes"] as Tabela[]) {
+      await limparTabela(t);
+      await gravarMeta(`cursor.${t}`, null);
+    }
+  }
+}
+
+async function copiarVendas(incremental: boolean, tem0006: boolean) {
+  const cursor = incremental ? await lerMeta<string>("cursor.vendas") : undefined;
+  const inicioJanela = new Date(Date.now() - JANELA_DIAS * 86_400_000).toISOString();
+  const vendas = await todasAsPaginas<{ id: number; atualizado_em?: string }>(() => {
+    let q = supabase.from("vendas").select(selecaoVenda(tem0006)).order("id");
+    q = cursor ? q.gte("atualizado_em", recuar(cursor)) : q.gte("criado_em", inicioJanela);
+    return q as unknown as { range: (a: number, b: number) => PromiseLike<Res<{ id: number; atualizado_em?: string }>> };
+  });
+  await gravarVarios("vendas", vendas);
+
+  // Vendas cujo pagamento mudou (fiado recebido) ou fiado em aberto mais antigo que a janela.
+  const ids: number[] = [];
+  const pg = await todasAsPaginas<{ venda_id: number }>(() => {
+    let q = supabase.from("venda_pagamentos").select("venda_id").order("id");
+    q = cursor ? q.gte("atualizado_em", recuar(cursor)) : q.eq("forma", "fiado").is("fiado_recebido_em", null);
+    return q;
+  });
+  ids.push(...pg.map((p) => p.venda_id));
+  await buscarVendasPorIds(ids.filter((id) => !vendas.some((v) => v.id === id)), tem0006);
+
+  const novo = maiorData(vendas, cursor);
+  if (novo) await gravarMeta("cursor.vendas", novo);
+}
+
+async function copiarParcelas(incremental: boolean) {
+  const cursor = incremental ? await lerMeta<string>("cursor.parcelas") : undefined;
+  const linhas = await todasAsPaginas<{ id: number; atualizado_em?: string }>(() => {
+    let q = supabase.from("parcelas").select("*, clientes(nome, telefone), vendas!inner(id, criado_em, status, total)").order("id");
+    if (cursor) q = q.gte("atualizado_em", recuar(cursor));
+    return q;
+  });
+  await gravarVarios("parcelas", linhas);
+  const novo = maiorData(linhas, cursor);
+  if (novo) await gravarMeta("cursor.parcelas", novo);
+}
+
+/** Caixas: os mesmos dados da tela "Caixas" (listar_caixas respeita o fechamento cego). */
+async function copiarCaixas() {
+  const r = await supabase.rpc("listar_caixas", { p_limite: 1000 });
+  let linhas: { id: number }[];
+  if (!r.error) linhas = r.data as { id: number }[];
+  else {
+    const d = await supabase.from("caixas").select(COLUNAS_CAIXA).order("id", { ascending: false }).limit(1000);
+    if (d.error) throw d.error;
+    linhas = (d.data as unknown as { id: number }[]).map((c) => ({ ...c, valor_esperado: null, diferenca: null, resumo: null }));
+  }
+  await gravarVarios("caixas", linhas);
+}
+
+async function copiarMovimentacoes() {
+  const ultimoId = (await lerMeta<number>("cursor.movimentacoes")) ?? null;
+  const inicioJanela = new Date(Date.now() - JANELA_DIAS * 86_400_000).toISOString();
+  const linhas = await todasAsPaginas<{ id: number }>(() => {
+    let q = supabase.from("movimentacoes").select("*").order("id");
+    q = ultimoId ? q.gt("id", ultimoId) : q.gte("criado_em", inicioJanela);
+    return q;
+  });
+  await gravarVarios("movimentacoes", linhas);
+  const maior = linhas.reduce((m, l) => Math.max(m, l.id), ultimoId ?? 0);
+  if (maior) await gravarMeta("cursor.movimentacoes", maior);
+}
+
+let emAndamento: Promise<void> | null = null;
+let deNovo: { ehAdmin: boolean; tem0006: boolean } | null = null;
+
+/**
+ * Atualiza a cópia local. Chamado ao entrar, a cada 2 minutos e quando a
+ * internet volta. Duas chamadas ao mesmo tempo viram uma só.
+ */
+export function atualizarCopiaLocal(opcoes: { ehAdmin: boolean; tem0006: boolean }): Promise<void> {
+  // Pedido no meio de outra cópia (ex.: as configurações acabaram de chegar): roda de novo no fim.
+  if (emAndamento) { deNovo = opcoes; return emAndamento; }
+  emAndamento = (async () => {
+    mudar({ rodando: true, erro: "" });
+    try {
+      const incremental = await temColunaAtualizado();
+      mudar({ temIncremental: incremental });
+      await conferirZerado();
+      await copiarPequena("produtos", "produtos", true);
+      if (opcoes.tem0006) await copiarPequena("clientes", "clientes", incremental);
+      if (opcoes.ehAdmin) await copiarPequena("perfis", "perfis", incremental);
+      // Vendas, parcelas e caixas mudam (cancelamento, recebimento, fechamento):
+      // só dá para copiar só o que mudou com o SQL 0009. Sem ele, ficam só online.
+      if (incremental) {
+        await copiarVendas(true, opcoes.tem0006);
+        if (opcoes.tem0006) await copiarParcelas(true);
+      }
+      await copiarCaixas();
+      await copiarMovimentacoes();
+      const agora = new Date().toISOString();
+      await gravarMeta("ultima_copia", agora);
+      mudar({ ultima: agora });
+    } catch (e) {
+      mudar({ erro: (e as Error)?.message ?? String(e) });
+    } finally {
+      mudar({ rodando: false });
+      emAndamento = null;
+      if (deNovo) { const o = deNovo; deNovo = null; void atualizarCopiaLocal(o); }
+    }
+  })();
+  return emAndamento;
+}

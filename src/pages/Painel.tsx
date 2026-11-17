@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
+import { doServidorOuLocal } from "../lib/local/fallback";
+import { fiadosLocal, movimentacoesLocal, parcelasLocal, produtosLocais, resumoPainelLocal, vendasLocal } from "../lib/local/consultas";
 import { Link } from "react-router-dom";
 import { supabase, mensagemErro } from "../lib/supabase";
 import { fmtDataHora, fmtQtd, fmtData } from "../lib/format";
@@ -31,34 +33,54 @@ export default function Painel() {
 
   const carregar = useCallback(async () => {
     try {
-      const [r, b, v, m] = await Promise.all([
-        supabase.rpc("resumo_painel"),
-        supabase.from("vw_produtos").select("*").eq("ativo", true).eq("abaixo_minimo", true).order("estoque").limit(6),
-        supabase.from("vw_produtos").select("*").eq("ativo", true).in("situacao_validade", ["vencido", "critico", "proximo"]).order("validade").limit(6),
-        supabase.from("movimentacoes").select("*").order("criado_em", { ascending: false }).limit(8),
-      ]);
-      for (const x of [r, b, v, m]) if (x.error) throw x.error;
-      setResumo(r.data as ResumoPainel);
-      setBaixos(b.data as ProdutoView[]);
-      setVencendo(v.data as ProdutoView[]);
-      setMovs(m.data as Movimentacao[]);
       const inicio = new Date();
       inicio.setHours(0, 0, 0, 0);
-      const { data: vh } = await supabase.from("vendas").select("total").eq("status", "concluida").gte("criado_em", inicio.toISOString()).limit(5000);
-      if (vh) setHoje({ qtd: vh.length, total: vh.reduce((s, v) => s + Number(v.total), 0) });
-      // A receber: fiado pendente + parcelas do crediário em aberto.
-      const [fi, pa] = await Promise.all([
-        supabase.from("venda_pagamentos").select("valor, vendas!inner(status, cliente_nome)").eq("forma", "fiado").is("fiado_recebido_em", null).eq("vendas.status", "concluida").limit(10000),
-        tem0006 ? supabase.from("parcelas").select("valor, vencimento, cliente_id").eq("status", "aberta").limit(10000) : Promise.resolve({ data: [] as { valor: number; vencimento: string; cliente_id: number }[] }),
-      ]);
-      const fiados = (fi.data ?? []) as unknown as { valor: number; vendas: { cliente_nome: string | null } }[];
-      const parcelas = (pa.data ?? []) as { valor: number; vencimento: string; cliente_id: number }[];
       const hojeTxt = new Date().toLocaleDateString("sv-SE");
+      type Fiado = { valor: number; vendas: { cliente_nome: string | null } };
+      type ParcelaResumo = { valor: number; vencimento: string; cliente_id: number };
+      type Dados = { r: ResumoPainel; b: ProdutoView[]; v: ProdutoView[]; m: Movimentacao[]; vh: { total: number }[]; fi: Fiado[]; pa: ParcelaResumo[] };
+      // Com servidor: dados ao vivo. Sem servidor: a cópia guardada neste computador.
+      const { data, error } = await doServidorOuLocal<Dados>(
+        async () => {
+          const [r, b, v, m, vh, fi, pa] = await Promise.all([
+            supabase.rpc("resumo_painel"),
+            supabase.from("vw_produtos").select("*").eq("ativo", true).eq("abaixo_minimo", true).order("estoque").limit(6),
+            supabase.from("vw_produtos").select("*").eq("ativo", true).in("situacao_validade", ["vencido", "critico", "proximo"]).order("validade").limit(6),
+            supabase.from("movimentacoes").select("*").order("criado_em", { ascending: false }).limit(8),
+            supabase.from("vendas").select("total").eq("status", "concluida").gte("criado_em", inicio.toISOString()).limit(5000),
+            supabase.from("venda_pagamentos").select("valor, vendas!inner(status, cliente_nome)").eq("forma", "fiado").is("fiado_recebido_em", null).eq("vendas.status", "concluida").limit(10000),
+            tem0006 ? supabase.from("parcelas").select("valor, vencimento, cliente_id").eq("status", "aberta").limit(10000) : Promise.resolve({ data: [] as ParcelaResumo[], error: null }),
+          ]);
+          const erro = [r, b, v, m, vh, fi, pa].find((x) => x.error)?.error ?? null;
+          return {
+            data: erro ? null : { r: r.data as ResumoPainel, b: b.data as ProdutoView[], v: v.data as ProdutoView[], m: m.data as Movimentacao[], vh: (vh.data ?? []) as { total: number }[], fi: (fi.data ?? []) as unknown as Fiado[], pa: (pa.data ?? []) as ParcelaResumo[] },
+            error: erro,
+          };
+        },
+        async () => {
+          const produtos = (await produtosLocais()).filter((p) => p.ativo);
+          return {
+            r: await resumoPainelLocal(),
+            b: produtos.filter((p) => p.abaixo_minimo).sort((a, b) => a.estoque - b.estoque).slice(0, 6),
+            v: produtos.filter((p) => ["vencido", "critico", "proximo"].includes(p.situacao_validade)).sort((a, b) => (a.validade ?? "").localeCompare(b.validade ?? "")).slice(0, 6),
+            m: (await movimentacoesLocal({ limite: 8 })).lista,
+            vh: await vendasLocal({ desde: inicio.toISOString(), status: "concluida" }),
+            fi: (await fiadosLocal(false)) as unknown as Fiado[],
+            pa: tem0006 ? await parcelasLocal({ status: "aberta" }) : [],
+          };
+        },
+      );
+      if (error) throw error;
+      setResumo(data.r);
+      setBaixos(data.b);
+      setVencendo(data.v);
+      setMovs(data.m);
+      setHoje({ qtd: data.vh.length, total: data.vh.reduce((s, v) => s + Number(v.total), 0) });
       setReceber({
-        fiado: fiados.reduce((s, f) => s + Number(f.valor), 0),
-        crediario: parcelas.reduce((s, p) => s + Number(p.valor), 0),
-        atrasado: parcelas.filter((p) => p.vencimento < hojeTxt).reduce((s, p) => s + Number(p.valor), 0),
-        clientes: new Set([...fiados.map((f) => `f:${f.vendas.cliente_nome}`), ...parcelas.map((p) => `c:${p.cliente_id}`)]).size,
+        fiado: data.fi.reduce((s, f) => s + Number(f.valor), 0),
+        crediario: data.pa.reduce((s, p) => s + Number(p.valor), 0),
+        atrasado: data.pa.filter((p) => p.vencimento < hojeTxt).reduce((s, p) => s + Number(p.valor), 0),
+        clientes: new Set([...data.fi.map((f) => `f:${f.vendas.cliente_nome}`), ...data.pa.map((p) => `c:${p.cliente_id}`)]).size,
       });
     } catch (e) {
       setErro(mensagemErro(e));

@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { doServidorOuLocal } from "../lib/local/fallback";
+import { movimentacoesLocal, produtoLocal } from "../lib/local/consultas";
 import { useSearchParams } from "react-router-dom";
 import { supabase, mensagemErro } from "../lib/supabase";
 import { fmtDataHora, fmtQtd, lerNumero, NOME_TIPO } from "../lib/format";
@@ -37,17 +39,31 @@ export default function Estoque() {
   useEffect(() => {
     const id = params.get("produto");
     if (!id) return;
-    supabase.from("vw_produtos").select("*").eq("id", id).maybeSingle().then(({ data }) => {
+    void doServidorOuLocal<ProdutoView | null>(
+      () => supabase.from("vw_produtos").select("*").eq("id", id).maybeSingle(),
+      () => produtoLocal(Number(id)),
+    ).then(({ data }) => {
       if (data) { setProduto(data as ProdutoView); setFiltroProduto(true); }
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const carregarHist = useCallback(async () => {
-    let q = supabase.from("movimentacoes").select("*", { count: "exact" }).order("criado_em", { ascending: false });
-    if (filtroTipo) q = q.eq("tipo", filtroTipo);
-    if (filtroProduto && produto) q = q.eq("produto_id", produto.id);
-    const { data, count, error } = await q.range(pagina * POR_PAGINA, pagina * POR_PAGINA + POR_PAGINA - 1);
+    const totalL = { n: 0 };
+    const { data, count, error } = await doServidorOuLocal<Movimentacao[]>(
+      () => {
+        let q = supabase.from("movimentacoes").select("*", { count: "exact" }).order("criado_em", { ascending: false });
+        if (filtroTipo) q = q.eq("tipo", filtroTipo);
+        if (filtroProduto && produto) q = q.eq("produto_id", produto.id);
+        return q.range(pagina * POR_PAGINA, pagina * POR_PAGINA + POR_PAGINA - 1);
+      },
+      async () => {
+        const r = await movimentacoesLocal({ tipo: filtroTipo || undefined, produtoId: filtroProduto && produto ? produto.id : undefined, pagina, porPagina: POR_PAGINA });
+        totalL.n = r.total;
+        return r.lista;
+      },
+      { contar: () => totalL.n },
+    );
     if (error) return avisar("erro", mensagemErro(error));
     setHist(data as Movimentacao[]);
     setTotal(count ?? 0);

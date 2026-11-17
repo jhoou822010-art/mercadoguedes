@@ -46,6 +46,8 @@ function iniciar() {
   setInterval(() => { if (navigator.onLine) void verificarServidor(); }, 30_000);
 }
 
+export const estadoConexaoAgora = () => { iniciar(); return estado; };
+
 export function useConexao() {
   iniciar();
   const [, atualizar] = useState(0);

@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from "react";
+import { doServidorOuLocal } from "../lib/local/fallback";
+import { buscarProdutosLocal } from "../lib/local/consultas";
 import { supabase } from "../lib/supabase";
 import { termoBusca } from "../lib/data";
 import { fmtMoeda, fmtQtd } from "../lib/format";
@@ -37,14 +39,20 @@ export function ProdutoBusca({ onSelecionar, placeholder = "Nome, código ou có
     }
     const minha = ++seq.current;
     setBuscando(true);
-    let q = supabase
-      .from("vw_produtos")
-      .select("*")
-      .or(`nome.ilike.*${termo}*,codigo.ilike.*${termo}*,barras.ilike.*${termo}*`)
-      .order("nome")
-      .limit(12);
-    if (somenteAtivos) q = q.eq("ativo", true);
-    const { data } = await q;
+    const { data } = await doServidorOuLocal(
+      () => {
+        let q = supabase
+          .from("vw_produtos")
+          .select("*")
+          .or(`nome.ilike.*${termo}*,codigo.ilike.*${termo}*,barras.ilike.*${termo}*`)
+          .order("nome")
+          .limit(12);
+        if (somenteAtivos) q = q.eq("ativo", true);
+        return q;
+      },
+      () => buscarProdutosLocal(t, somenteAtivos),
+      { espera: 4000 },
+    );
     if (minha !== seq.current) return [];
     const lista = (data ?? []) as ProdutoView[];
     setResultados(lista);

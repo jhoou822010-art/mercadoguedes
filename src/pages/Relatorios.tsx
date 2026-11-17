@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
+import { doServidorOuLocal } from "../lib/local/fallback";
+import { movimentacoesLocal, produtosLocais } from "../lib/local/consultas";
 import { useSearchParams } from "react-router-dom";
 import { supabase, mensagemErro } from "../lib/supabase";
 import { buscarTodos } from "../lib/data";
@@ -30,15 +32,23 @@ export default function Relatorios() {
   const [erro, setErro] = useState("");
 
   useEffect(() => {
-    buscarTodos<ProdutoView>("vw_produtos", { coluna: "nome" }).then(setProdutos).catch((e) => setErro(mensagemErro(e)));
+    doServidorOuLocal<ProdutoView[]>(
+      async () => {
+        try { return { data: await buscarTodos<ProdutoView>("vw_produtos", { coluna: "nome" }), error: null }; }
+        catch (e) { return { data: null, error: e }; }
+      },
+      async () => (await produtosLocais()).sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR")),
+    ).then(({ data, error }) => (error ? setErro(mensagemErro(error)) : setProdutos(data))).catch((e) => setErro(mensagemErro(e)));
   }, []);
 
   useEffect(() => {
     if (rel !== "movimentacoes") return;
     setMovs(null);
     const desde = new Date(Date.now() - dias * 86400000).toISOString();
-    supabase.from("movimentacoes").select("*").gte("criado_em", desde).order("criado_em", { ascending: false }).limit(5000)
-      .then(({ data, error }) => (error ? setErro(mensagemErro(error)) : setMovs(data as Movimentacao[])));
+    void doServidorOuLocal<Movimentacao[]>(
+      () => supabase.from("movimentacoes").select("*").gte("criado_em", desde).order("criado_em", { ascending: false }).limit(5000),
+      async () => (await movimentacoesLocal({ desde, limite: 5000 })).lista,
+    ).then(({ data, error }) => (error ? setErro(mensagemErro(error)) : setMovs(data)));
   }, [rel, dias]);
 
   const dados = useMemo(() => {

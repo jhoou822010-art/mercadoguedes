@@ -62,6 +62,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setPerfilOffline(false);
       return;
     }
+    // Sem internet: nem tenta o servidor, usa o perfil guardado na hora.
+    if (!navigator.onLine) { usarGuardado(s); return; }
     const { data, error } = await supabase.from("perfis").select("*").eq("id", s.user.id).maybeSingle();
     if (error && ehErroDeRede(error)) {
       usarGuardado(s);

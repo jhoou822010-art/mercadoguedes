@@ -23,6 +23,9 @@ export function ehErroDeRede(erro: unknown) {
 export const supabase = createClient(
   url || "https://exemplo.supabase.co",
   chave || "chave-ausente",
+  // Sem repetições automáticas (1s + 2s + 4s): sem internet, o sistema passa
+  // na hora para a cópia guardada no computador, em vez de esperar 7 segundos.
+  { db: { retry: false } },
 );
 
 /** Converte erros do Supabase/Postgres em mensagens claras em português. */
