@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { doServidorOuLocal } from "../lib/local/fallback";
+import { vendasLocaisNaoEnviadas } from "../lib/local/caixaLocal";
 import { fiadosLocal, movimentacoesLocal, parcelasLocal, produtosLocais, resumoPainelLocal, vendasLocal } from "../lib/local/consultas";
 import { Link } from "react-router-dom";
 import { supabase, mensagemErro } from "../lib/supabase";
@@ -47,7 +48,7 @@ export default function Painel() {
             supabase.from("vw_produtos").select("*").eq("ativo", true).eq("abaixo_minimo", true).order("estoque").limit(6),
             supabase.from("vw_produtos").select("*").eq("ativo", true).in("situacao_validade", ["vencido", "critico", "proximo"]).order("validade").limit(6),
             supabase.from("movimentacoes").select("*").order("criado_em", { ascending: false }).limit(8),
-            supabase.from("vendas").select("total").eq("status", "concluida").gte("criado_em", inicio.toISOString()).limit(5000),
+            supabase.from("vendas").select("id, total").eq("status", "concluida").gte("criado_em", inicio.toISOString()).limit(5000),
             supabase.from("venda_pagamentos").select("valor, vendas!inner(status, cliente_nome)").eq("forma", "fiado").is("fiado_recebido_em", null).eq("vendas.status", "concluida").limit(10000),
             tem0006 ? supabase.from("parcelas").select("valor, vencimento, cliente_id").eq("status", "aberta").limit(10000) : Promise.resolve({ data: [] as ParcelaResumo[], error: null }),
           ]);
@@ -71,6 +72,10 @@ export default function Painel() {
         },
       );
       if (error) throw error;
+      // Vendas de hoje feitas neste computador que o servidor ainda não tem.
+      // (as já enviadas o servidor já contou)
+      const pendHoje = (await vendasLocaisNaoEnviadas()).filter((v) => v.status === "concluida" && v.sync !== "sincronizado" && v.criado_em >= inicio.toISOString());
+      if (pendHoje.length && !(data.vh as { id?: number }[]).some((v) => (v.id ?? 0) < 0)) data.vh = [...data.vh, ...pendHoje];
       setResumo(data.r);
       setBaixos(data.b);
       setVencendo(data.v);

@@ -100,3 +100,8 @@ export async function entrarSemInternet(email: string, senha: string): Promise<s
   } catch { return "Não foi possível abrir a sessão neste computador (espaço cheio)."; }
   return "";
 }
+
+/** Sessão guardada de um usuário (para enviar as vendas dele mesmo depois que ele saiu). */
+export function sessaoDoCofre(usuarioId: string): Session | null {
+  return Object.values(ler()).find((e) => e.usuario_id === usuarioId)?.sessao ?? null;
+}

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
 import { doServidorOuLocal } from "../lib/local/fallback";
 import { caixasLocal, clientesLocal, fiadosLocal, parcelasLocal, vendasLocal } from "../lib/local/consultas";
+import { vendasLocaisNaoEnviadas } from "../lib/local/caixaLocal";
 import { estadoConexaoAgora } from "../lib/conexao";
 import { ehErroDeRede } from "../lib/supabase";
 import { useSearchParams } from "react-router-dom";
@@ -139,13 +140,20 @@ function ListaVendas() {
       },
       () => vendasLocal({ desde: dias > 0 ? inicioPeriodo(dias) : undefined, status: status || undefined, limite: LIMITE_VENDAS }),
     );
+    // Com servidor: soma as vendas feitas neste computador que ainda não chegaram lá.
+    if (!error && data) {
+      const desde = dias > 0 ? inicioPeriodo(dias) : "";
+      const ja = new Set(data.map((v) => v.uuid_local).filter(Boolean));
+      const pend = (await vendasLocaisNaoEnviadas()).filter((v) => v.sync !== "sincronizado" && !ja.has(v.uuid_local) && v.criado_em >= desde && (!status || v.status === status));
+      if (pend.length && !data.some((v) => v.id < 0)) data.unshift(...pend);
+    }
     if (error) { avisar("erro", mensagemErro(error)); setVendas([]); return; }
     setVendas(data as unknown as VendaCompleta[]);
   }, [dias, status, avisar, tem0006]);
   useEffect(() => { void carregar(); }, [carregar]);
 
   const t = busca.trim().toLowerCase();
-  const lista = (vendas ?? []).filter((v) => !t || String(v.id) === t || (v.cliente_nome ?? "").toLowerCase().includes(t) || (v.usuario_nome ?? "").toLowerCase().includes(t));
+  const lista = (vendas ?? []).filter((v) => !t || String(v.id) === t || (v.codigo_local ?? "").toLowerCase() === t || (v.cliente_nome ?? "").toLowerCase().includes(t) || (v.usuario_nome ?? "").toLowerCase().includes(t));
   const concluidas = lista.filter((v) => v.status === "concluida");
   const totalVendido = concluidas.reduce((s, v) => s + Number(v.total), 0);
   const porForma = concluidas.flatMap((v) => v.venda_pagamentos).reduce<Record<string, number>>((acc, p) => {
@@ -219,7 +227,11 @@ function ListaVendas() {
               <tbody>
                 {lista.map((v) => (
                   <tr key={v.id} className={v.status === "cancelada" ? "opacity-60" : ""}>
-                    <td className="font-mono">{v.id}</td>
+                    <td className="font-mono">
+                      {v.id > 0 ? v.id : v.codigo_local}
+                      {v.id < 0 && <span className="ml-1 rounded bg-atencao-100 px-1 font-sans text-[11px] text-atencao-700" title="Feita neste computador; é enviada sozinha quando houver conexão.">{v.sync === "erro" ? "erro no envio" : "aguardando envio"}</span>}
+                      {v.divergencias && <span className="ml-1 rounded bg-critico-50 px-1 font-sans text-[11px] text-critico-700" title={v.divergencias}>anotação</span>}
+                    </td>
                     <td className="whitespace-nowrap text-xs text-slate-500">{fmtDataHora(v.criado_em)}</td>
                     <td>{v.usuario_nome}</td>
                     <td className="text-xs">{v.venda_pagamentos.map((p) => NOME_FORMA[p.forma]).join(" + ")}{v.cliente_nome && <span className="block text-slate-400">{v.cliente_nome}</span>}</td>
@@ -236,9 +248,9 @@ function ListaVendas() {
 
       {aberta && (
         <JanelaComprovante
-          titulo={`Venda nº ${aberta.id}`}
+          titulo={aberta.id > 0 ? `Venda nº ${aberta.id}` : `Venda ${aberta.codigo_local ?? ""} (aguardando envio)`}
           onFechar={() => setAberta(null)}
-          acaoExtra={ehAdmin && aberta.status === "concluida" && <button className="btn-perigo" onClick={() => { setCancelando(aberta); setAberta(null); }}>Cancelar venda</button>}
+          acaoExtra={ehAdmin && aberta.status === "concluida" && aberta.id > 0 && <button className="btn-perigo" onClick={() => { setCancelando(aberta); setAberta(null); }}>Cancelar venda</button>}
         >
           {(l) => (
             <>

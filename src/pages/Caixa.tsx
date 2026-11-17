@@ -4,7 +4,7 @@ import { produtosPorIds } from "../lib/local/consultas";
 import { useNavigate } from "react-router-dom";
 import { supabase, mensagemErro } from "../lib/supabase";
 import { centavos, dividirParcelas, fmtData, fmtDataHora, fmtMoeda, fmtQtd, hojeISO, lerNumero, NOME_FORMA, somarMeses } from "../lib/format";
-import { FORMAS, type Cliente, type Caixa as TCaixa, type FormaPagamento, type ProdutoView, type ResumoCaixa, type Venda, type VendaCompleta } from "../lib/types";
+import { FORMAS, type Cliente, type Caixa as TCaixa, type FormaPagamento, type ProdutoView, type ResumoCaixa, type VendaCompleta } from "../lib/types";
 import { useAuth } from "../contexts/AuthContext";
 import { useToast } from "../components/Toast";
 import { Confirmar, Modal } from "../components/Modal";
@@ -14,7 +14,18 @@ import { Aviso, Cabecalho, Carregando } from "../components/Ui";
 import { ativarCalculadora, Calculadora } from "../components/Calculadora";
 import { abrirCaixaEmJanela, chaveCarrinho, ehJanelaDoCaixa, fixarCaixaNaPrincipal, gravarCarrinho, lerCarrinhoGuardado } from "../lib/carrinho";
 import { ClienteSeletor } from "../components/ClienteSeletor";
-import { COLUNAS_CAIXA, selecaoVenda } from "../lib/consultas";
+import { COLUNAS_CAIXA } from "../lib/consultas";
+import { estadoConexaoAgora } from "../lib/conexao";
+import { ehErroDeRede } from "../lib/supabase";
+import { abrirCaixaLocal, caixaAbertoLocal, fecharCaixaLocal, finalizarVendaLocal, guardarCaixaDoServidor, movimentarCaixaLocal, resumoCaixaLocal, type ItemVenda } from "../lib/local/caixaLocal";
+
+/** Número do caixa para mostrar: o do servidor, ou "deste computador" enquanto não foi enviado. */
+const nomeCaixa = (c: TCaixa) => (c.id > 0 ? `Caixa nº ${c.id}` : "Caixa (aguardando número do servidor)");
+
+/** Fechamento cego: o operador não vê os valores (igual ao servidor). */
+function mascarar(r: ResumoCaixa): ResumoCaixa {
+  return { caixa_id: r.caixa_id, status: r.status, usuario_nome: r.usuario_nome, aberto_em: r.aberto_em, fechado_em: r.fechado_em, qtd_vendas: r.qtd_vendas, qtd_canceladas: r.qtd_canceladas, oculto: true } as unknown as ResumoCaixa;
+}
 import { pixDaLoja } from "../lib/pix";
 import { PixNaTela } from "../components/QrPix";
 import { ACOES, mapaAtalhos, nomeTecla, rotulo, useAtalhos, type MapaAtalhos } from "../lib/atalhos";
@@ -28,13 +39,14 @@ export default function Caixa() {
   const [caixa, setCaixa] = useState<TCaixa | null | undefined>(undefined);
 
   const carregar = useCallback(async () => {
-    const { data } = await supabase
-      .from("caixas")
-      .select(COLUNAS_CAIXA)
-      .eq("usuario_id", sessao!.user.id)
-      .eq("status", "aberto")
-      .maybeSingle();
-    setCaixa((data as unknown as TCaixa) ?? null);
+    // Com servidor: guarda no computador o caixa aberto que o servidor conhece (ex.: aberto antes).
+    if (estadoConexaoAgora() !== "offline") {
+      let r = await supabase.from("caixas").select(`${COLUNAS_CAIXA}, uuid_local, dispositivo`).eq("usuario_id", sessao!.user.id).eq("status", "aberto");
+      if (r.error && !ehErroDeRede(r.error)) r = await supabase.from("caixas").select(COLUNAS_CAIXA).eq("usuario_id", sessao!.user.id).eq("status", "aberto") as typeof r;
+      for (const c of (r.data ?? []) as unknown as TCaixa[]) await guardarCaixaDoServidor({ ...c, valor_esperado: null, diferenca: null, resumo: null });
+    }
+    // O caixa da tela é sempre o deste computador (funciona sem internet).
+    setCaixa(await caixaAbertoLocal(sessao!.user.id));
   }, [sessao]);
 
   useEffect(() => { void carregar(); }, [carregar]);
@@ -58,11 +70,15 @@ function AbrirCaixa({ onAberto }: { onAberto: (c: TCaixa) => void }) {
     const n = valor.trim() ? lerNumero(valor) : 0;
     if (Number.isNaN(n) || n < 0) return setErro("Digite um valor válido (ex.: 100 ou 150,50).");
     setAbrindo(true);
-    const { data, error } = await supabase.rpc("abrir_caixa", { p_valor_abertura: n });
-    setAbrindo(false);
-    if (error) return setErro(mensagemErro(error));
-    avisar("sucesso", `Caixa aberto com ${fmtMoeda(n)} de troco.`);
-    onAberto(data as TCaixa);
+    try {
+      const c = await abrirCaixaLocal(perfil!, n);
+      avisar("sucesso", `Caixa aberto com ${fmtMoeda(n)} de troco.`);
+      onAberto(c);
+    } catch (e) {
+      setErro(mensagemErro(e));
+    } finally {
+      setAbrindo(false);
+    }
   }
 
   return (
@@ -106,7 +122,7 @@ function lerCarrinho(caixaId: number): { itens: ItemCarrinho[]; desconto: Descon
 const INTEIRAS = ["UN", "PCT", "CX"];
 
 function PontoDeVenda({ caixa, onFechado }: { caixa: TCaixa; onFechado: () => void }) {
-  const { ehAdmin, config, tem0006 } = useAuth();
+  const { ehAdmin, config } = useAuth();
   const avisar = useToast();
   const inicial = useMemo(() => lerCarrinho(caixa.id), [caixa.id]);
   const [itens, setItens] = useState<ItemCarrinho[]>(inicial.itens);
@@ -155,7 +171,8 @@ function PontoDeVenda({ caixa, onFechado }: { caixa: TCaixa; onFechado: () => vo
     : descontoValor > subtotal ? "O desconto é maior que a compra."
     : !ehAdmin && subtotal > 0 && descontoValor > centavos(subtotal * limite / 100) ? `Desconto acima do permitido (máx. ${limite}%).`
     : "";
-  const problemas = linhas.filter((l) => l.invalida || l.semEstoque);
+  // Estoque do sistema menor que a venda: a venda é PERMITIDA (o produto está na mão do cliente) e fica anotada.
+  const problemas = linhas.filter((l) => l.invalida);
   const podePagar = itens.length > 0 && problemas.length === 0 && !erroDesconto;
 
   function adicionar(p: ProdutoView) {
@@ -259,18 +276,17 @@ function PontoDeVenda({ caixa, onFechado }: { caixa: TCaixa; onFechado: () => vo
     focarBusca();
   }
 
-  async function vendaConcluida(v: Venda) {
-    const { data } = await supabase.from("vendas").select(selecaoVenda(tem0006)).eq("id", v.id).single();
+  function vendaConcluida(v: VendaCompleta) {
     limpar();
-    setComprovante(data as unknown as VendaCompleta);
-    avisar("sucesso", `Venda nº ${v.id} finalizada.${Number(v.troco) > 0 ? ` Troco: ${fmtMoeda(v.troco)}.` : ""}`);
+    setComprovante(v);
+    avisar("sucesso", `Venda ${v.codigo_local ?? `nº ${v.id}`} registrada.${Number(v.troco) > 0 ? ` Troco: ${fmtMoeda(v.troco)}.` : ""}`);
   }
 
   return (
     <div>
       <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold">Caixa nº {caixa.id}</h1>
+          <h1 className="text-2xl font-bold">{nomeCaixa(caixa)}</h1>
           <p className="text-sm text-slate-500">Aberto em {fmtDataHora(caixa.aberto_em)} · {caixa.usuario_nome}</p>
           <div className="nao-imprimir mt-2">
             {ehJanelaDoCaixa() ? (
@@ -317,13 +333,13 @@ function PontoDeVenda({ caixa, onFechado }: { caixa: TCaixa; onFechado: () => vo
           ) : (
             <ul className="flex-1 divide-y divide-slate-100 overflow-y-auto">
               {linhas.map((l, n) => (
-                <li key={l.p.id} className={`grid grid-cols-[1fr_auto] items-center gap-x-3 gap-y-2 px-4 py-3 sm:flex ${l.invalida || l.semEstoque ? "bg-critico-50" : ""}`}>
+                <li key={l.p.id} className={`grid grid-cols-[1fr_auto] items-center gap-x-3 gap-y-2 px-4 py-3 sm:flex ${l.invalida ? "bg-critico-50" : l.semEstoque ? "bg-atencao-50" : ""}`}>
                   <span className="hidden w-6 text-xs text-slate-400 sm:order-1 sm:block">{n + 1}</span>
                   <div className="order-1 min-w-0 sm:order-2 sm:flex-1">
                     <p className="truncate font-medium">{l.p.nome}</p>
                     <p className="text-xs text-slate-500">
                       {fmtMoeda(l.p.preco)} / {l.p.unidade} · {l.avulso ? <span className="font-semibold text-acao-700">sem cadastro</span> : <>cód. {l.p.codigo}</>}
-                      {l.semEstoque && <span className="ml-1 font-semibold text-critico-700">· estoque: {fmtQtd(l.p.estoque, l.p.unidade)}</span>}
+                      {l.semEstoque && <span className="ml-1 font-semibold text-atencao-700" title="A venda é permitida e fica anotada para o administrador conferir o estoque.">· estoque do sistema: {fmtQtd(l.p.estoque, l.p.unidade)} (será anotado)</span>}
                       {l.invalida && l.qtd !== "" && <span className="ml-1 font-semibold text-critico-700">· quantidade inválida</span>}
                     </p>
                   </div>
@@ -398,9 +414,8 @@ function PontoDeVenda({ caixa, onFechado }: { caixa: TCaixa; onFechado: () => vo
         <JanelaPagamento
           teclas={teclas}
           total={total}
-          itens={linhas.map((l) => (l.avulso
-            ? { avulso: true as const, descricao: l.p.nome, preco: Number(l.p.preco), quantidade: l.q }
-            : { produto_id: l.p.id, quantidade: l.q }))}
+          caixa={caixa}
+          itens={linhas.map((l) => ({ p: l.p, quantidade: l.q, avulso: l.avulso }))}
           desconto={descontoValor}
           onConcluida={vendaConcluida}
           onFechar={() => { setJanela(""); focarBusca(); }}
@@ -418,7 +433,7 @@ function PontoDeVenda({ caixa, onFechado }: { caixa: TCaixa; onFechado: () => vo
       />
 
       {(janela === "sangria" || janela === "suprimento") && (
-        <JanelaSangria tipo={janela} onFechar={() => { setJanela(""); focarBusca(); }} />
+        <JanelaSangria tipo={janela} caixa={caixa} onFechar={() => { setJanela(""); focarBusca(); }} />
       )}
 
       {calcAberta && <Calculadora onFechar={() => { setCalcAberta(false); if (!janela) focarBusca(); }} />}
@@ -429,7 +444,7 @@ function PontoDeVenda({ caixa, onFechado }: { caixa: TCaixa; onFechado: () => vo
 
       {comprovante && (
         <JanelaComprovante
-          titulo={`Venda nº ${comprovante.id} concluída`}
+          titulo={comprovante.id > 0 ? `Venda nº ${comprovante.id} concluída` : `Venda ${comprovante.codigo_local ?? ""} concluída`}
           onFechar={() => { setComprovante(null); focarBusca(); }}
           acaoExtra={<button className="btn-secundario" onClick={() => { setComprovante(null); focarBusca(); }}>Nova venda</button>}
         >
@@ -504,9 +519,9 @@ function JanelaDesconto({ subtotal, atual, limite, onAplicar, onFechar }: {
 
 interface Pag { forma: FormaPagamento; valor: number; cliente_id?: number; cliente_nome?: string; parcelas?: number; primeiro_vencimento?: string; juros_percentual?: number; total_com_juros?: number }
 
-function JanelaPagamento({ teclas, total, itens, desconto, onConcluida, onFechar }: {
-  teclas: MapaAtalhos;
-  total: number; itens: Array<{ produto_id: number; quantidade: number } | { avulso: true; descricao: string; preco: number; quantidade: number }>; desconto: number; onConcluida: (v: Venda) => void; onFechar: () => void;
+function JanelaPagamento({ teclas, caixa, total, itens, desconto, onConcluida, onFechar }: {
+  teclas: MapaAtalhos; caixa: TCaixa;
+  total: number; itens: ItemVenda[]; desconto: number; onConcluida: (v: VendaCompleta) => void; onFechar: () => void;
 }) {
   const [pags, setPags] = useState<Pag[]>([]);
   const [forma, setForma] = useState<FormaPagamento>("dinheiro");
@@ -523,7 +538,7 @@ function JanelaPagamento({ teclas, total, itens, desconto, onConcluida, onFechar
   const [enviando, setEnviando] = useState(false);
   const campoValor = useRef<HTMLInputElement>(null);
   const [calc, setCalc] = useState(false);
-  const { tem0006, config: cfgLoja, ehAdmin: admin } = useAuth();
+  const { tem0006, config: cfgLoja, ehAdmin: admin, perfil: eu } = useAuth();
   const [credCliente, setCredCliente] = useState<Cliente | null>(null);
   const [credParcelas, setCredParcelas] = useState(1);
   const [credPrimeiro, setCredPrimeiro] = useState(hojeISO(30));
@@ -588,16 +603,19 @@ function JanelaPagamento({ teclas, total, itens, desconto, onConcluida, onFechar
     if (lista.some((x) => x.forma === "fiado") && !cliente.trim()) return setErro("Para vender fiado, informe o nome do cliente.");
     setEnviando(true);
     setErro("");
-    const { data, error } = await supabase.rpc("finalizar_venda", {
-      p_itens: itens,
-      p_desconto: desconto,
-      p_pagamentos: lista.map(({ cliente_nome: _n, total_com_juros: _t, ...p }) => p),
-      p_cliente_nome: cliente.trim() || null,
-      p_cliente_telefone: telefone.trim() || null,
-    });
-    setEnviando(false);
-    if (error) return setErro(mensagemErro(error));
-    onConcluida(data as Venda);
+    try {
+      // Grava PRIMEIRO neste computador (funciona sem internet); a fila envia ao servidor.
+      const venda = await finalizarVendaLocal({
+        caixa, perfil: eu!, ehAdmin: admin, config: cfgLoja, itens, desconto,
+        pagamentos: lista.map(({ cliente_nome: _n, total_com_juros: _t, ...p }) => p),
+        clienteNome: cliente.trim() || null, clienteTelefone: telefone.trim() || null,
+      });
+      onConcluida(venda);
+    } catch (e) {
+      setErro(mensagemErro(e));
+    } finally {
+      setEnviando(false);
+    }
   }
 
   async function aoConfirmar(e: FormEvent) {
@@ -776,7 +794,8 @@ function JanelaPagamento({ teclas, total, itens, desconto, onConcluida, onFechar
 
 /* ----------------------- Sangria / Suprimento ----------------------- */
 
-function JanelaSangria({ tipo, onFechar }: { tipo: "sangria" | "suprimento"; onFechar: () => void }) {
+function JanelaSangria({ tipo, caixa, onFechar }: { tipo: "sangria" | "suprimento"; caixa: TCaixa; onFechar: () => void }) {
+  const { perfil } = useAuth();
   const avisar = useToast();
   const [valor, setValor] = useState("");
   const [obs, setObs] = useState("");
@@ -789,7 +808,8 @@ function JanelaSangria({ tipo, onFechar }: { tipo: "sangria" | "suprimento"; onF
     const n = lerNumero(valor);
     if (Number.isNaN(n) || n <= 0) return setErro("Digite um valor maior que zero.");
     setEnviando(true);
-    const { error } = await supabase.rpc("movimentar_caixa", { p_tipo: tipo, p_valor: n, p_observacao: obs.trim() || null });
+    let error: unknown = null;
+    try { await movimentarCaixaLocal({ caixa, perfil: perfil!, tipo, valor: n, observacao: obs.trim() || null }); } catch (e) { error = e; }
     setEnviando(false);
     if (error) return setErro(mensagemErro(error));
     avisar("sucesso", `${tipo === "sangria" ? "Sangria" : "Suprimento"} de ${fmtMoeda(n)} registrado.`);
@@ -817,7 +837,7 @@ function JanelaSangria({ tipo, onFechar }: { tipo: "sangria" | "suprimento"; onF
 /* ---------------------------- Fechamento ---------------------------- */
 
 function JanelaFechamento({ caixa, onCancelar, onFechado }: { caixa: TCaixa; onCancelar: () => void; onFechado: () => void }) {
-  const { config } = useAuth();
+  const { config, perfil, valoresOcultos } = useAuth();
   const avisar = useToast();
   const [resumo, setResumo] = useState<ResumoCaixa | null>(null);
   const [contado, setContado] = useState("");
@@ -829,8 +849,9 @@ function JanelaFechamento({ caixa, onCancelar, onFechado }: { caixa: TCaixa; onC
   const [parcial, setParcial] = useState(false);
 
   useEffect(() => {
-    supabase.rpc("resumo_caixa", { p_caixa_id: caixa.id }).then(({ data, error }) => (error ? setErro(mensagemErro(error)) : setResumo(data as ResumoCaixa)));
-  }, [caixa.id]);
+    // Resumo calculado neste computador (funciona sem internet).
+    resumoCaixaLocal(caixa).then((r) => setResumo(valoresOcultos ? mascarar(r) : r)).catch((e) => setErro(mensagemErro(e)));
+  }, [caixa, valoresOcultos]);
 
   const n = lerNumero(contado);
   const cego = Boolean(resumo?.oculto);
@@ -838,18 +859,24 @@ function JanelaFechamento({ caixa, onCancelar, onFechado }: { caixa: TCaixa; onC
 
   async function fechar() {
     setEnviando(true);
-    const { data, error } = await supabase.rpc("fechar_caixa", { p_caixa_id: caixa.id, p_valor_contado: n, p_observacao: obs.trim() || null });
+    let data: TCaixa;
+    try {
+      data = await fecharCaixaLocal({ caixa, perfil: perfil!, valorContado: n, observacao: obs.trim() || null });
+    } catch (e) {
+      setEnviando(false);
+      setConfirmando(false);
+      return setErro(mensagemErro(e));
+    }
     setEnviando(false);
     setConfirmando(false);
-    if (error) return setErro(mensagemErro(error));
-    try { sessionStorage.removeItem(chaveCarrinho(caixa.id)); } catch { /* ignora */ }
-    avisar("sucesso", `Caixa nº ${caixa.id} fechado.`);
-    setFechado(data as TCaixa);
+    try { sessionStorage.removeItem(chaveCarrinho(caixa.id)); localStorage.removeItem(chaveCarrinho(caixa.id)); } catch { /* ignora */ }
+    avisar("sucesso", `${nomeCaixa(caixa)} fechado.`);
+    setFechado(valoresOcultos && data.resumo ? { ...data, valor_esperado: null, diferenca: null, resumo: mascarar(data.resumo) } : data);
   }
 
   if (fechado?.resumo) {
     return (
-      <JanelaComprovante titulo={`Caixa nº ${fechado.id} fechado`} onFechar={onFechado}>
+      <JanelaComprovante titulo={`${nomeCaixa(fechado)} fechado`} onFechar={onFechado}>
         {(l) => <CupomFechamento r={fechado.resumo!} config={config} largura={l} contado={fechado.valor_contado} diferenca={fechado.diferenca} observacao={fechado.observacao_fechamento} />}
       </JanelaComprovante>
     );

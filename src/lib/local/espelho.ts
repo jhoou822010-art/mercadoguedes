@@ -12,7 +12,7 @@
 */
 import { supabase } from "../supabase";
 import { COLUNAS_CAIXA, selecaoVenda } from "../consultas";
-import { apagarVarios, gravarMeta, gravarVarios, lerMeta, lerTodos, limparTabela, type Tabela } from "./idb";
+import { apagarVarios, gravarMeta, gravarVarios, lerMeta, lerTodos, type Tabela } from "./idb";
 
 const PAGINA = 1000;
 const MARGEM_MS = 5 * 60_000;
@@ -81,18 +81,45 @@ async function buscarVendasPorIds(ids: number[], tem0006: boolean) {
   }
 }
 
-/** O servidor foi zerado (limpeza dos testes)? Então zera a cópia de vendas também. */
+/**
+ * O servidor foi zerado (limpeza dos testes)? Então apaga da cópia o que veio
+ * do servidor. NUNCA apaga o que foi feito neste computador e ainda não foi
+ * enviado (números negativos).
+ */
 async function conferirZerado() {
   const { data } = await supabase.from("vendas").select("id").order("id", { ascending: false }).limit(1);
   const maiorServidor = (data?.[0] as { id: number } | undefined)?.id ?? 0;
   const locais = await lerTodos<{ id: number }>("vendas");
   const maiorLocal = locais.reduce((m, v) => (typeof v.id === "number" && v.id > m ? v.id : m), 0);
   if (maiorLocal > maiorServidor) {
-    for (const t of ["vendas", "parcelas", "caixas", "movimentacoes"] as Tabela[]) {
-      await limparTabela(t);
+    for (const t of ["vendas", "parcelas", "caixas", "movimentacoes", "caixa_movimentos"] as Tabela[]) {
+      const doServidor = (await lerTodos<{ id: number }>(t)).filter((l) => l.id > 0).map((l) => l.id);
+      await apagarVarios(t, doServidor);
       await gravarMeta(`cursor.${t}`, null);
     }
   }
+}
+
+/**
+ * Chegou do servidor a versão definitiva de algo feito aqui (mesmo uuid_local):
+ * tira a versão provisória (número negativo) para não contar duas vezes.
+ * Vendas: só depois que a cópia dos produtos já inclui a baixa de estoque dela.
+ */
+async function tirarProvisorios(tabela: Tabela, chegaram: { uuid_local?: string | null }[], conferirEstoque = false) {
+  const uuids = new Set(chegaram.map((l) => l.uuid_local).filter(Boolean));
+  if (!uuids.size) return;
+  const copiaProdutos = (await lerMeta<string>("copia_produtos_em")) ?? "";
+  const locais = await lerTodos<{ id: number; uuid_local?: string | null; sincronizado_em?: string | null }>(tabela);
+  await apagarVarios(tabela, locais.filter((l) => l.id < 0 && l.uuid_local && uuids.has(l.uuid_local)
+    && (!conferirEstoque || (l.sincronizado_em && l.sincronizado_em <= copiaProdutos))).map((l) => l.id));
+}
+
+/** Operações deste computador ainda não enviadas (a cópia não pode passar por cima delas). */
+async function pendentesLocais() {
+  const ops = (await lerTodos<{ estado: string; tipo: string; parametros: Record<string, unknown> }>("fila")).filter((o) => o.estado !== "sincronizado");
+  return {
+    caixasFechando: new Set(ops.filter((o) => o.tipo === "fechar_caixa").flatMap((o) => [o.parametros.p_caixa_id, o.parametros.p_caixa_uuid]).filter(Boolean)),
+  };
 }
 
 async function copiarVendas(incremental: boolean, tem0006: boolean) {
@@ -104,6 +131,7 @@ async function copiarVendas(incremental: boolean, tem0006: boolean) {
     return q as unknown as { range: (a: number, b: number) => PromiseLike<Res<{ id: number; atualizado_em?: string }>> };
   });
   await gravarVarios("vendas", vendas);
+  await tirarProvisorios("vendas", vendas as { uuid_local?: string | null }[], true);
 
   // Vendas cujo pagamento mudou (fiado recebido) ou fiado em aberto mais antigo que a janela.
   const ids: number[] = [];
@@ -141,7 +169,27 @@ async function copiarCaixas() {
     if (d.error) throw d.error;
     linhas = (d.data as unknown as { id: number }[]).map((c) => ({ ...c, valor_esperado: null, diferenca: null, resumo: null }));
   }
-  await gravarVarios("caixas", linhas);
+  // Caixa que este computador está fechando (fechamento ainda não enviado): mantém a versão daqui.
+  const { caixasFechando } = await pendentesLocais();
+  const fora = (c: { id: number; uuid_local?: string | null }) => caixasFechando.has(c.id) || (!!c.uuid_local && caixasFechando.has(c.uuid_local));
+  const novos = (linhas as { id: number; uuid_local?: string | null }[]).filter((c) => !fora(c));
+  await gravarVarios("caixas", novos);
+  await tirarProvisorios("caixas", novos.filter((c) => !fora(c)));
+}
+
+/** Sangrias, suprimentos e recebimentos dos caixas (só chegam linhas novas). */
+async function copiarCaixaMovimentos() {
+  const ultimoId = (await lerMeta<number>("cursor.caixa_movimentos")) ?? null;
+  const inicioJanela = new Date(Date.now() - JANELA_DIAS * 86_400_000).toISOString();
+  const linhas = await todasAsPaginas<{ id: number; uuid_local?: string | null }>(() => {
+    let q = supabase.from("caixa_movimentos").select("*").order("id");
+    q = ultimoId ? q.gt("id", ultimoId) : q.gte("criado_em", inicioJanela);
+    return q;
+  });
+  await gravarVarios("caixa_movimentos", linhas);
+  await tirarProvisorios("caixa_movimentos", linhas);
+  const maior = linhas.reduce((m, l) => Math.max(m, l.id), ultimoId ?? 0);
+  if (maior) await gravarMeta("cursor.caixa_movimentos", maior);
 }
 
 async function copiarMovimentacoes() {
@@ -173,7 +221,9 @@ export function atualizarCopiaLocal(opcoes: { ehAdmin: boolean; tem0006: boolean
       const incremental = await temColunaAtualizado();
       mudar({ temIncremental: incremental });
       await conferirZerado();
+      const inicioProdutos = new Date().toISOString();
       await copiarPequena("produtos", "produtos", true);
+      await gravarMeta("copia_produtos_em", inicioProdutos);
       if (opcoes.tem0006) await copiarPequena("clientes", "clientes", incremental);
       if (opcoes.ehAdmin) await copiarPequena("perfis", "perfis", incremental);
       // Vendas, parcelas e caixas mudam (cancelamento, recebimento, fechamento):
@@ -183,6 +233,7 @@ export function atualizarCopiaLocal(opcoes: { ehAdmin: boolean; tem0006: boolean
         if (opcoes.tem0006) await copiarParcelas(true);
       }
       await copiarCaixas();
+      await copiarCaixaMovimentos();
       await copiarMovimentacoes();
       const agora = new Date().toISOString();
       await gravarMeta("ultima_copia", agora);

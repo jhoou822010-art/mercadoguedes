@@ -7,9 +7,9 @@
     (migração segura, sem apagar nada).
 */
 export const NOME_BANCO = "lojafacil";
-export const VERSAO_BANCO = 1;
+export const VERSAO_BANCO = 2;
 
-export type Tabela = "produtos" | "clientes" | "perfis" | "vendas" | "parcelas" | "caixas" | "movimentacoes" | "meta";
+export type Tabela = "produtos" | "clientes" | "perfis" | "vendas" | "parcelas" | "caixas" | "movimentacoes" | "caixa_movimentos" | "fila" | "meta";
 
 let aberto: Promise<IDBDatabase> | null = null;
 
@@ -34,6 +34,12 @@ export function abrirBanco(): Promise<IDBDatabase> {
         const movs = db.createObjectStore("movimentacoes", { keyPath: "id" });
         movs.createIndex("criado_em", "criado_em");
         db.createObjectStore("meta", { keyPath: "chave" });
+      }
+      // Versão 2 (caixa offline): fila de envio e sangrias/suprimentos/recebimentos do caixa.
+      if (de < 2) {
+        const fila = db.createObjectStore("fila", { keyPath: "id" });
+        fila.createIndex("ordem", "ordem");
+        db.createObjectStore("caixa_movimentos", { keyPath: "id" });
       }
     };
     req.onsuccess = () => {
@@ -121,4 +127,13 @@ export async function espacoUsado(): Promise<{ usado: number; total: number } | 
     const e = await navigator.storage?.estimate?.();
     return e ? { usado: e.usage ?? 0, total: e.quota ?? 0 } : null;
   } catch { return null; }
+}
+
+/** Grava em várias tabelas numa transação só: ou grava tudo, ou nada (venda + fila + numeração). */
+export async function gravarJunto(gravacoes: { tabela: Tabela; linhas: unknown[] }[]) {
+  const db = await abrirBanco();
+  const tabelas = [...new Set(gravacoes.map((g) => g.tabela))];
+  const tx = db.transaction(tabelas, "readwrite");
+  for (const g of gravacoes) for (const l of g.linhas) tx.objectStore(g.tabela).put(l);
+  await transacaoConcluida(tx);
 }

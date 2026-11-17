@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useAuth } from "../contexts/AuthContext";
 import { useConexao } from "../lib/conexao";
 import { atualizarCopiaLocal, estadoEspelho, ouvirEspelho } from "../lib/local/espelho";
+import { aoTerminarEnvio, atualizarResumoFila, ouvirFila, processarFila, resumoFila } from "../lib/local/fila";
 
 const A_CADA_MS = 2 * 60_000;
 
@@ -12,12 +13,23 @@ export function MantemCopiaLocal() {
   const pode = estado === "online" && perfil && perfil.papel !== "pendente";
   useEffect(() => {
     if (!pode) return;
-    const rodar = () => void atualizarCopiaLocal({ ehAdmin, tem0006 });
+    // Primeiro ENVIA o que foi feito aqui; depois atualiza a cópia.
+    const rodar = () => void processarFila().then(() => atualizarCopiaLocal({ ehAdmin, tem0006 }));
     rodar();
     const t = setInterval(rodar, A_CADA_MS);
-    return () => clearInterval(t);
+    // Pendências: tenta enviar a cada 15 s (rápido) enquanto houver.
+    const envio = setInterval(() => { if (resumoFila().pendentes > 0) void processarFila(); }, 15_000);
+    const depois = aoTerminarEnvio(() => void atualizarCopiaLocal({ ehAdmin, tem0006 }));
+    return () => { clearInterval(t); clearInterval(envio); depois(); };
   }, [pode, ehAdmin, tem0006]);
+  useEffect(() => { void atualizarResumoFila(); }, []);
   return null;
+}
+
+export function useFila() {
+  const [, atualizar] = useState(0);
+  useEffect(() => ouvirFila(() => atualizar((n) => n + 1)), []);
+  return resumoFila();
 }
 
 export function useEstadoCopia() {

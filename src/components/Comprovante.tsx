@@ -27,6 +27,15 @@ function CabecalhoLoja({ config }: { config: Configuracoes | null }) {
   );
 }
 
+/** "Venda nº 153" (servidor) ou "Venda A3F1-000012" (feita neste computador, ainda sem número do servidor). */
+function numeroVenda(v: { id: number; codigo_local?: string | null }) {
+  return v.id > 0 ? `Venda nº ${v.id}` : `Venda ${v.codigo_local ?? ""}`;
+}
+/** Identificador do Pix (só letras e números). */
+function txidVenda(v: { id: number; codigo_local?: string | null }) {
+  return v.id > 0 ? `V${v.id}` : `V${(v.codigo_local ?? "").replace(/[^A-Za-z0-9]/g, "")}`;
+}
+
 export function CupomVenda({ venda, config, largura }: { venda: VendaCompleta; config: Configuracoes | null; largura: "80" | "58" }) {
   const cancelada = venda.status === "cancelada";
   return (
@@ -36,7 +45,7 @@ export function CupomVenda({ venda, config, largura }: { venda: VendaCompleta; c
       <div className="centro" style={{ fontWeight: 700 }}>COMPROVANTE NÃO FISCAL</div>
       {cancelada && <div className="centro" style={{ fontWeight: 700 }}>*** VENDA CANCELADA ***</div>}
       <hr />
-      <div className="linha"><span>Venda nº {venda.id}</span><span>{fmtDataHora(venda.criado_em)}</span></div>
+      <div className="linha"><span>{numeroVenda(venda)}</span><span>{fmtDataHora(venda.criado_em)}</span></div>
       <div>Operador(a): {venda.usuario_nome ?? "—"}</div>
       <hr />
       {venda.venda_itens.map((i, n) => (
@@ -59,7 +68,7 @@ export function CupomVenda({ venda, config, largura }: { venda: VendaCompleta; c
       {Number(venda.troco) > 0 && <div className="linha" style={{ fontWeight: 700 }}><span>Troco</span><span>{fmtMoeda(venda.troco)}</span></div>}
       {(() => {
         const valorPix = venda.venda_pagamentos.filter((p) => p.forma === "pix").reduce((s, p) => s + Number(p.valor), 0);
-        return valorPix > 0 && !cancelada ? <BlocoPix config={config} valor={valorPix} txid={`V${venda.id}`} titulo="Pagamento via Pix" /> : null;
+        return valorPix > 0 && !cancelada ? <BlocoPix config={config} valor={valorPix} txid={txidVenda(venda)} titulo="Pagamento via Pix" /> : null;
       })()}
       {venda.cliente_nome && (
         <>
@@ -237,7 +246,7 @@ export function CupomCarne({ venda, cliente, parcelas, config, largura }: {
       <CabecalhoLoja config={config} />
       <hr />
       <div className="centro" style={{ fontWeight: 700 }}>CARNÊ DE CREDIÁRIO</div>
-      <div className="linha"><span>Venda nº {venda.id}</span><span>{fmtDataHora(venda.criado_em)}</span></div>
+      <div className="linha"><span>{numeroVenda(venda)}</span><span>{fmtDataHora(venda.criado_em)}</span></div>
       <div>Cliente: <strong>{cliente}</strong></div>
       <div className="linha"><span>Total parcelado</span><span>{fmtMoeda(ordenadas.reduce((s, p) => s + Number(p.valor), 0))}</span></div>
       {ordenadas.map((p) => (
@@ -245,7 +254,7 @@ export function CupomCarne({ venda, cliente, parcelas, config, largura }: {
           <div className="linha" style={{ fontWeight: 700 }}><span>Parcela {p.numero}/{p.total_parcelas}</span><span>{fmtMoeda(p.valor)}</span></div>
           <div className="linha"><span>Vencimento</span><span>{fmtData(p.vencimento)}</span></div>
           <div>{p.status === "paga" ? `PAGA em ${fmtDataHora(p.pago_em)}` : p.status === "cancelada" ? "CANCELADA" : "Pago em: ___/___/_____"}</div>
-          {p.status === "aberta" && <BlocoPix config={config} valor={Number(p.valor)} txid={`V${venda.id}P${p.numero}`} titulo={`Pix da parcela ${p.numero}`} pequeno />}
+          {p.status === "aberta" && <BlocoPix config={config} valor={Number(p.valor)} txid={`${txidVenda(venda)}P${p.numero}`} titulo={`Pix da parcela ${p.numero}`} pequeno />}
           <div style={{ marginTop: 8 }}>Recebido por: ______________</div>
         </div>
       ))}

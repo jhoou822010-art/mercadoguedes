@@ -5,7 +5,7 @@
 */
 import type { Cliente, Configuracoes, Movimentacao, Parcela, Perfil, Produto, ProdutoView, ResumoPainel, SituacaoValidade, VendaCompleta } from "../types";
 import { lerConfigGuardada } from "../perfilLocal";
-import { lerTodos } from "./idb";
+import { lerMeta, lerTodos } from "./idb";
 
 const hojeLocal = () => new Date().toLocaleDateString("sv-SE"); // AAAA-MM-DD
 const diasEntre = (de: string, ate: string) => Math.round((Date.parse(ate + "T00:00:00") - Date.parse(de + "T00:00:00")) / 86_400_000);
@@ -29,9 +29,20 @@ export function comoProdutoView(p: Produto, cfg: Configuracoes | null): ProdutoV
   };
 }
 
+/**
+ * Produtos da cópia, com o estoque já descontando as vendas feitas NESTE
+ * computador que a cópia ainda não reflete (não enviadas, ou enviadas depois
+ * da última cópia dos produtos).
+ */
 export async function produtosLocais(): Promise<ProdutoView[]> {
   const cfg = lerConfigGuardada();
-  return (await lerTodos<Produto>("produtos")).map((p) => comoProdutoView(p, cfg));
+  const copia = (await lerMeta<string>("copia_produtos_em")) ?? "";
+  const vendidos = new Map<number, number>();
+  for (const v of await lerTodos<VendaCompleta>("vendas")) {
+    if (v.id >= 0 || v.status !== "concluida" || (v.sincronizado_em && v.sincronizado_em <= copia)) continue;
+    for (const i of v.venda_itens) if (i.produto_id && !i.avulso) vendidos.set(i.produto_id, (vendidos.get(i.produto_id) ?? 0) + Number(i.quantidade));
+  }
+  return (await lerTodos<Produto>("produtos")).map((p) => comoProdutoView(vendidos.has(p.id) ? { ...p, estoque: Math.round((Number(p.estoque) - vendidos.get(p.id)!) * 1000) / 1000 } : p, cfg));
 }
 
 const porNome = (a: { nome: string }, b: { nome: string }) => a.nome.localeCompare(b.nome, "pt-BR");
@@ -103,8 +114,15 @@ export async function movimentacoesLocal(f: { tipo?: string; produtoId?: number;
   return { lista: l, total };
 }
 
+/** Vendas da cópia; se a mesma venda estiver em duas versões (provisória e do servidor), fica a do servidor. */
+async function vendasSemRepetir() {
+  const todas = await lerTodos<VendaCompleta>("vendas");
+  const doServidor = new Set(todas.filter((v) => v.id > 0 && v.uuid_local).map((v) => v.uuid_local));
+  return todas.filter((v) => v.id > 0 || !doServidor.has(v.uuid_local ?? ""));
+}
+
 export async function vendasLocal(f: { desde?: string; status?: string; limite?: number } = {}) {
-  return (await lerTodos<VendaCompleta>("vendas"))
+  return (await vendasSemRepetir())
     .filter((v) => (!f.desde || v.criado_em >= f.desde) && (!f.status || v.status === f.status))
     .sort((a, b) => b.criado_em.localeCompare(a.criado_em))
     .slice(0, f.limite ?? 100_000);
@@ -112,7 +130,7 @@ export async function vendasLocal(f: { desde?: string; status?: string; limite?:
 
 /** Igual à consulta de fiado da tela Vendas: pagamento + dados da venda. */
 export async function fiadosLocal(recebidos: boolean) {
-  const vendas = await lerTodos<VendaCompleta>("vendas");
+  const vendas = await vendasSemRepetir();
   return vendas.filter((v) => v.status === "concluida").flatMap((v) => v.venda_pagamentos
     .filter((p) => p.forma === "fiado" && Boolean(p.fiado_recebido_em) === recebidos)
     .map((p) => ({ ...p, vendas: { id: v.id, cliente_nome: v.cliente_nome, cliente_telefone: v.cliente_telefone, criado_em: v.criado_em, status: v.status, usuario_nome: v.usuario_nome } })))

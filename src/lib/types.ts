@@ -192,6 +192,20 @@ export interface Venda {
 }
 
 /** Venda com itens e pagamentos (consulta com relacionamentos). */
+/** Campos do modo offline (SQL 0010). Registro com id NEGATIVO = feito neste computador, ainda sem número do servidor. */
+export type EstadoSync = "pendente" | "sincronizando" | "sincronizado" | "erro";
+export interface CamposOffline {
+  uuid_local?: string | null;
+  dispositivo?: string | null;
+  codigo_local?: string | null;
+  divergencias?: string | null;
+  sync?: EstadoSync;
+  sincronizado_em?: string | null;
+  caixa_uuid?: string | null;
+}
+export interface Venda extends CamposOffline {}
+export interface Caixa extends CamposOffline {}
+
 export interface VendaCompleta extends Venda {
   venda_itens: VendaItem[];
   venda_pagamentos: VendaPagamento[];
