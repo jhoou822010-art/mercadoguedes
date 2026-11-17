@@ -392,6 +392,8 @@ export default function Configuracoes() {
                     value={u.papel}
                     onChange={(e) => setMudanca({ u, papel: e.target.value as Papel })}
                     aria-label={`Papel de ${u.nome}`}
+                    disabled={u.id === eu?.id}
+                    title={u.id === eu?.id ? "Você não pode mudar o seu próprio acesso (a loja precisa de um administrador)." : undefined}
                   >
                     {(Object.keys(NOME_PAPEL) as Papel[]).map((p) => <option key={p} value={p}>{NOME_PAPEL[p]}</option>)}
                   </select>
