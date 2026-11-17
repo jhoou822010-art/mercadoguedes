@@ -42,6 +42,11 @@ export async function produtosLocais(): Promise<ProdutoView[]> {
     if (v.id >= 0 || v.status !== "concluida" || (v.sincronizado_em && v.sincronizado_em <= copia)) continue;
     for (const i of v.venda_itens) if (i.produto_id && !i.avulso) vendidos.set(i.produto_id, (vendidos.get(i.produto_id) ?? 0) + Number(i.quantidade));
   }
+  // Entradas/saídas/ajustes feitos aqui que a cópia ainda não reflete (delta < 0 tira, > 0 soma).
+  for (const m of await lerTodos<{ id: number; produto_id: number; delta?: number; sincronizado_em?: string | null }>("movimentacoes")) {
+    if (m.id >= 0 || m.delta === undefined || (m.sincronizado_em && m.sincronizado_em <= copia)) continue;
+    vendidos.set(m.produto_id, (vendidos.get(m.produto_id) ?? 0) - Number(m.delta));
+  }
   return (await lerTodos<Produto>("produtos")).map((p) => comoProdutoView(vendidos.has(p.id) ? { ...p, estoque: Math.round((Number(p.estoque) - vendidos.get(p.id)!) * 1000) / 1000 } : p, cfg));
 }
 
@@ -133,15 +138,22 @@ export async function fiadosLocal(recebidos: boolean) {
   const vendas = await vendasSemRepetir();
   return vendas.filter((v) => v.status === "concluida").flatMap((v) => v.venda_pagamentos
     .filter((p) => p.forma === "fiado" && Boolean(p.fiado_recebido_em) === recebidos)
-    .map((p) => ({ ...p, vendas: { id: v.id, cliente_nome: v.cliente_nome, cliente_telefone: v.cliente_telefone, criado_em: v.criado_em, status: v.status, usuario_nome: v.usuario_nome } })))
+    .map((p) => ({ ...p, vendas: { id: v.id, uuid_local: v.uuid_local ?? null, cliente_nome: v.cliente_nome, cliente_telefone: v.cliente_telefone, criado_em: v.criado_em, status: v.status, usuario_nome: v.usuario_nome } })))
     .sort((a, b) => b.id - a.id);
 }
 
-type ParcelaComJuncao = Parcela & { clientes: { nome: string; telefone: string | null } | null; vendas: { id: number; criado_em: string; status: string; total: number } };
+type ParcelaComJuncao = Parcela & { clientes: { nome: string; telefone: string | null } | null; vendas: { id: number; criado_em: string; status: string; total: number; uuid_local?: string | null } };
 
 export async function parcelasLocal(f: { status?: "aberta" | "paga"; atrasadas?: boolean; vendaId?: number; clienteId?: number } = {}) {
   const hoje = hojeLocal();
-  let l = (await lerTodos<ParcelaComJuncao>("parcelas")).filter((p) =>
+  // Parcelas do servidor + as das vendas no crediário feitas aqui e ainda não enviadas.
+  const clientes = new Map((await lerTodos<Cliente>("clientes")).map((c) => [c.id, c]));
+  const doServidor = await lerTodos<ParcelaComJuncao>("parcelas");
+  const locais: ParcelaComJuncao[] = (await vendasSemRepetir()).filter((v) => v.id < 0).flatMap((v) => (v.parcelas ?? []).map((p) => {
+    const c = clientes.get(p.cliente_id);
+    return { ...p, clientes: c ? { nome: c.nome, telefone: c.telefone } : null, vendas: { id: v.id, criado_em: v.criado_em, status: v.status, total: v.total, uuid_local: v.uuid_local ?? null } } as ParcelaComJuncao;
+  }));
+  let l = [...doServidor, ...locais].filter((p) =>
     (!f.status || p.status === f.status) && (!f.atrasadas || p.vencimento < hoje) &&
     (!f.vendaId || p.venda_id === f.vendaId) && (!f.clienteId || p.cliente_id === f.clienteId));
   l = f.status === "paga" ? l.sort((a, b) => String(b.pago_em ?? "").localeCompare(String(a.pago_em ?? ""))) :
@@ -151,7 +163,9 @@ export async function parcelasLocal(f: { status?: "aberta" | "paga"; atrasadas?:
 
 export async function clientesLocal(f: { termo?: string; somenteAtivos?: boolean; limite?: number } = {}) {
   const t = sem(f.termo?.trim() ?? "");
-  return (await lerTodos<Cliente>("clientes"))
+  const todos = await lerTodos<Cliente & { uuid_local?: string | null }>("clientes");
+  const doServidor = new Set(todos.filter((c) => c.id > 0 && c.uuid_local).map((c) => c.uuid_local));
+  return todos.filter((c) => c.id > 0 || !doServidor.has(c.uuid_local ?? ""))
     .filter((c) => (!f.somenteAtivos || c.ativo) && (!t || contem(c.nome, t) || contem(c.telefone, t) || contem(c.cpf, t)))
     .sort(porNome).slice(0, f.limite ?? 100_000);
 }

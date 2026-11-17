@@ -20,7 +20,7 @@ import type { EstadoSync } from "../types";
 import { estadoConexaoAgora, verificarServidor } from "../conexao";
 import { abrirBanco, gravarVarios, lerTodos, lerUm, type Tabela } from "./idb";
 
-export type TipoOperacao = "abrir_caixa" | "venda" | "movimento_caixa" | "fechar_caixa";
+export type TipoOperacao = "abrir_caixa" | "venda" | "movimento_caixa" | "fechar_caixa" | "receber_fiado" | "receber_parcela" | "cliente" | "estoque";
 
 export interface Operacao {
   id: string;                 // uuid da operação (o mesmo enviado ao servidor)
@@ -38,6 +38,8 @@ export interface Operacao {
   funcao: string;             // função do SQL 0010
   parametros: Record<string, unknown>;
   servidor_id: number | null; // número dado pelo servidor
+  /** Informações só deste computador (não vão ao servidor). */
+  meta?: Record<string, unknown>;
 }
 
 let ordemSeq = 0;

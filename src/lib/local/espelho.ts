@@ -66,13 +66,16 @@ async function copiarPequena(tabela: Tabela, origem: string, incremental: boolea
   // Apagados no servidor (ex.: produto cadastrado por engano): confere a lista de códigos.
   const ids = new Set((await todasAsPaginas<{ id: number | string }>(() => supabase.from(origem).select("id").order("id"))).map((l) => l.id));
   const locais = await lerTodos<{ id: number | string }>(tabela);
-  await apagarVarios(tabela, locais.filter((l) => !ids.has(l.id)).map((l) => l.id));
+  // Nunca apaga o que foi cadastrado aqui e ainda não foi enviado (número negativo).
+  await apagarVarios(tabela, locais.filter((l) => !ids.has(l.id) && !(typeof l.id === "number" && l.id < 0)).map((l) => l.id));
+  await tirarProvisorios(tabela, linhas as { uuid_local?: string | null }[]);
   const novo = maiorData(linhas, cursor);
   if (novo) await gravarMeta(`cursor.${tabela}`, novo);
 }
 
 async function buscarVendasPorIds(ids: number[], tem0006: boolean) {
-  const unicos = [...new Set(ids)];
+  const { vendasRecebendo } = await pendentesLocais();
+  const unicos = [...new Set(ids)].filter((id) => !vendasRecebendo.has(id));
   for (let i = 0; i < unicos.length; i += 200) {
     const pedaco = unicos.slice(i, i + 200);
     const { data, error } = await supabase.from("vendas").select(selecaoVenda(tem0006)).in("id", pedaco);
@@ -116,9 +119,12 @@ async function tirarProvisorios(tabela: Tabela, chegaram: { uuid_local?: string 
 
 /** Operações deste computador ainda não enviadas (a cópia não pode passar por cima delas). */
 async function pendentesLocais() {
-  const ops = (await lerTodos<{ estado: string; tipo: string; parametros: Record<string, unknown> }>("fila")).filter((o) => o.estado !== "sincronizado");
+  const ops = (await lerTodos<{ estado: string; tipo: string; parametros: Record<string, unknown>; meta?: Record<string, unknown> }>("fila")).filter((o) => o.estado !== "sincronizado");
   return {
     caixasFechando: new Set(ops.filter((o) => o.tipo === "fechar_caixa").flatMap((o) => [o.parametros.p_caixa_id, o.parametros.p_caixa_uuid]).filter(Boolean)),
+    // Fiado/parcela recebidos aqui e ainda não enviados: a cópia não pode "desfazer" o recebimento.
+    vendasRecebendo: new Set(ops.filter((o) => o.tipo === "receber_fiado" || o.tipo === "receber_parcela").map((o) => o.meta?.venda_id).filter(Boolean)),
+    parcelasRecebendo: new Set(ops.filter((o) => o.tipo === "receber_parcela").map((o) => o.meta?.parcela_id).filter(Boolean)),
   };
 }
 
@@ -130,8 +136,10 @@ async function copiarVendas(incremental: boolean, tem0006: boolean) {
     q = cursor ? q.gte("atualizado_em", recuar(cursor)) : q.gte("criado_em", inicioJanela);
     return q as unknown as { range: (a: number, b: number) => PromiseLike<Res<{ id: number; atualizado_em?: string }>> };
   });
-  await gravarVarios("vendas", vendas);
-  await tirarProvisorios("vendas", vendas as { uuid_local?: string | null }[], true);
+  const { vendasRecebendo } = await pendentesLocais();
+  const vendasOk = vendas.filter((v) => !vendasRecebendo.has(v.id));
+  await gravarVarios("vendas", vendasOk);
+  await tirarProvisorios("vendas", vendasOk as { uuid_local?: string | null }[], true);
 
   // Vendas cujo pagamento mudou (fiado recebido) ou fiado em aberto mais antigo que a janela.
   const ids: number[] = [];
@@ -154,7 +162,8 @@ async function copiarParcelas(incremental: boolean) {
     if (cursor) q = q.gte("atualizado_em", recuar(cursor));
     return q;
   });
-  await gravarVarios("parcelas", linhas);
+  const { parcelasRecebendo } = await pendentesLocais();
+  await gravarVarios("parcelas", linhas.filter((l) => !parcelasRecebendo.has(l.id)));
   const novo = maiorData(linhas, cursor);
   if (novo) await gravarMeta("cursor.parcelas", novo);
 }
@@ -201,6 +210,7 @@ async function copiarMovimentacoes() {
     return q;
   });
   await gravarVarios("movimentacoes", linhas);
+  await tirarProvisorios("movimentacoes", linhas as { uuid_local?: string | null }[], true);
   const maior = linhas.reduce((m, l) => Math.max(m, l.id), ultimoId ?? 0);
   if (maior) await gravarMeta("cursor.movimentacoes", maior);
 }

@@ -2,7 +2,8 @@
 -- Loja Fácil · 0010 · CAIXA SEM INTERNET (modo offline, etapa 2)
 --
 -- Cada computador grava a abertura do caixa, as vendas, sangrias,
--- suprimentos e o fechamento PRIMEIRO no próprio computador, com um código
+-- suprimentos, recebimentos de fiado/parcela, clientes novos, movimentações
+-- de estoque e o fechamento PRIMEIRO no próprio computador, com um código
 -- único (uuid). Depois envia ao servidor por estas funções, que:
 --   * aceitam a mesma operação UMA vez só (mandar de novo não duplica);
 --   * gravam a data/hora em que aconteceu de verdade (no caixa);
@@ -226,9 +227,9 @@ begin
   -- Crediário
   select x into v_cred from jsonb_array_elements(p_pagamentos) x where x ->> 'forma' = 'crediario' limit 1;
   if v_cred is not null then
-    select * into v_cliente from public.clientes where id = nullif(v_cred ->> 'cliente_id', '')::bigint;
-    if not found then
-      raise exception 'Cliente do crediário não encontrado.';
+    v_cliente := public.sinc_achar_cliente(nullif(v_cred ->> 'cliente_id', '')::bigint, nullif(v_cred ->> 'cliente_uuid', '')::uuid);
+    if v_cliente.id is null then
+      raise exception 'Cliente do crediário não encontrado (o cadastro ainda não chegou ao servidor).';
     end if;
     if not v_cliente.ativo then
       v_diverg := v_diverg || format('cliente "%s" estava inativo', v_cliente.nome);
@@ -345,6 +346,179 @@ grant execute on function public.sinc_venda(uuid, uuid, bigint, jsonb, numeric, 
 grant execute on function public.sinc_fechar_caixa(uuid, bigint, numeric, text, timestamptz) to authenticated;
 drop function if exists public.sinc_data(timestamptz);
 
--- Conferência: deve listar as 4 funções.
+-- ---------------------------------------------------------------------
+-- 8) Receber fiado e parcela, cadastrar cliente e movimentar estoque
+--    feitos SEM internet (mesmas regras, por uuid, uma vez só).
+-- ---------------------------------------------------------------------
+alter table public.clientes      add column if not exists uuid_local uuid;
+alter table public.movimentacoes add column if not exists uuid_local uuid;
+create unique index if not exists clientes_uuid_local_unico      on public.clientes (uuid_local) where uuid_local is not null;
+create unique index if not exists movimentacoes_uuid_local_unico on public.movimentacoes (uuid_local) where uuid_local is not null;
+
+-- Crediário de cliente cadastrado sem internet: a venda chega com o uuid do cliente.
+create or replace function public.sinc_achar_cliente(p_id bigint, p_uuid uuid)
+returns public.clientes language sql stable security definer set search_path = public as $$
+  select * from public.clientes where (p_id is not null and p_id > 0 and id = p_id) or (p_uuid is not null and uuid_local = p_uuid) limit 1
+$$;
+
+create or replace function public.sinc_cliente(p_uuid uuid, p_nome text, p_telefone text, p_cpf text, p_endereco text, p_observacao text)
+returns public.clientes
+language plpgsql security definer set search_path = public
+as $$
+declare v public.clientes;
+begin
+  if not public.tem_acesso() then
+    raise exception 'Seu usuário não tem permissão para cadastrar cliente.';
+  end if;
+  perform pg_advisory_xact_lock(hashtext(p_uuid::text));
+  select * into v from public.clientes where uuid_local = p_uuid;
+  if found then return v; end if;
+  -- Mesmo CPF/CNPJ já cadastrado (ex.: no outro computador): usa o existente, não duplica.
+  if nullif(trim(p_cpf), '') is not null then
+    select * into v from public.clientes where cpf = trim(p_cpf);
+    if found then return v; end if;
+  end if;
+  if length(trim(coalesce(p_nome, ''))) < 2 then
+    raise exception 'Nome do cliente inválido.';
+  end if;
+  insert into public.clientes (nome, telefone, cpf, endereco, observacao, uuid_local)
+  values (trim(p_nome), nullif(trim(p_telefone), ''), nullif(trim(p_cpf), ''), nullif(trim(p_endereco), ''), nullif(trim(p_observacao), ''), p_uuid)
+  returning * into v;
+  return v;
+end;
+$$;
+
+create or replace function public.sinc_receber_fiado(p_uuid uuid, p_pagamento_id bigint, p_venda_uuid uuid, p_forma text, p_caixa_uuid uuid, p_caixa_id bigint, p_recebido_em timestamptz)
+returns public.caixa_movimentos
+language plpgsql security definer set search_path = public
+as $$
+declare
+  m public.caixa_movimentos;
+  v_pag public.venda_pagamentos;
+  c public.caixas;
+  v_status text;
+  v_quando timestamptz := public.sinc_quando(p_recebido_em);
+begin
+  if not public.tem_acesso() then raise exception 'Seu usuário não tem permissão.'; end if;
+  perform pg_advisory_xact_lock(hashtext(p_uuid::text));
+  select * into m from public.caixa_movimentos where uuid_local = p_uuid;
+  if found then return m; end if;
+  if p_forma not in ('dinheiro', 'pix', 'debito', 'credito', 'vale_alimentacao', 'vale_refeicao', 'outro') then
+    raise exception 'Forma de recebimento inválida.';
+  end if;
+  if p_pagamento_id is not null and p_pagamento_id > 0 then
+    select * into v_pag from public.venda_pagamentos where id = p_pagamento_id for update;
+  else
+    select p.* into v_pag from public.venda_pagamentos p join public.vendas v on v.id = p.venda_id
+     where v.uuid_local = p_venda_uuid and p.forma = 'fiado' order by p.id limit 1 for update;
+  end if;
+  if v_pag.id is null or v_pag.forma <> 'fiado' then raise exception 'Fiado não encontrado.'; end if;
+  if v_pag.fiado_recebido_em is not null then
+    raise exception 'Este fiado já tinha sido recebido em % por % — foi recebido de novo neste computador. Confira com o cliente.',
+      to_char(v_pag.fiado_recebido_em at time zone 'America/Sao_Paulo', 'DD/MM/YYYY HH24:MI'), coalesce(v_pag.fiado_recebido_por, '?');
+  end if;
+  select status into v_status from public.vendas where id = v_pag.venda_id;
+  if v_status = 'cancelada' then raise exception 'A venda deste fiado foi cancelada.'; end if;
+  c := public.sinc_achar_caixa(p_caixa_uuid, p_caixa_id);
+  update public.venda_pagamentos set fiado_recebido_em = v_quando, fiado_recebido_forma = p_forma, fiado_recebido_por = public.meu_nome()
+   where id = v_pag.id returning * into v_pag;
+  insert into public.caixa_movimentos (caixa_id, tipo, forma, valor, observacao, venda_id, usuario_id, usuario_nome, criado_em, uuid_local)
+  values (c.id, 'recebimento_fiado', p_forma, v_pag.valor, 'Fiado da venda nº ' || v_pag.venda_id, v_pag.venda_id, auth.uid(), public.meu_nome(), v_quando, p_uuid)
+  returning * into m;
+  return m;
+end;
+$$;
+
+create or replace function public.sinc_receber_parcela(p_uuid uuid, p_parcela_id bigint, p_venda_uuid uuid, p_numero integer, p_forma text, p_caixa_uuid uuid, p_caixa_id bigint, p_recebido_em timestamptz)
+returns public.caixa_movimentos
+language plpgsql security definer set search_path = public
+as $$
+declare
+  m public.caixa_movimentos;
+  v_par public.parcelas;
+  c public.caixas;
+  v_status text;
+  v_quando timestamptz := public.sinc_quando(p_recebido_em);
+begin
+  if not public.tem_acesso() then raise exception 'Seu usuário não tem permissão.'; end if;
+  perform pg_advisory_xact_lock(hashtext(p_uuid::text));
+  select * into m from public.caixa_movimentos where uuid_local = p_uuid;
+  if found then return m; end if;
+  if p_forma not in ('dinheiro', 'pix', 'debito', 'credito', 'vale_alimentacao', 'vale_refeicao', 'outro') then
+    raise exception 'Forma de recebimento inválida.';
+  end if;
+  if p_parcela_id is not null and p_parcela_id > 0 then
+    select * into v_par from public.parcelas where id = p_parcela_id for update;
+  else
+    select p.* into v_par from public.parcelas p join public.vendas v on v.id = p.venda_id
+     where v.uuid_local = p_venda_uuid and p.numero = p_numero for update;
+  end if;
+  if v_par.id is null then raise exception 'Parcela não encontrada.'; end if;
+  if v_par.status = 'paga' then
+    raise exception 'Esta parcela já tinha sido paga em % por % — foi recebida de novo neste computador. Confira com o cliente.',
+      to_char(v_par.pago_em at time zone 'America/Sao_Paulo', 'DD/MM/YYYY HH24:MI'), coalesce(v_par.pago_por, '?');
+  end if;
+  if v_par.status = 'cancelada' then raise exception 'Esta parcela foi cancelada.'; end if;
+  select status into v_status from public.vendas where id = v_par.venda_id;
+  if v_status = 'cancelada' then raise exception 'A venda desta parcela foi cancelada.'; end if;
+  c := public.sinc_achar_caixa(p_caixa_uuid, p_caixa_id);
+  update public.parcelas set status = 'paga', pago_em = v_quando, pago_forma = p_forma, pago_por = public.meu_nome(), caixa_id = c.id
+   where id = v_par.id returning * into v_par;
+  insert into public.caixa_movimentos (caixa_id, tipo, forma, valor, observacao, venda_id, usuario_id, usuario_nome, criado_em, uuid_local)
+  values (c.id, 'recebimento_crediario', p_forma, v_par.valor,
+          'Parcela ' || v_par.numero || '/' || v_par.total_parcelas || ' da venda nº ' || v_par.venda_id, v_par.venda_id, auth.uid(), public.meu_nome(), v_quando, p_uuid)
+  returning * into m;
+  return m;
+end;
+$$;
+
+-- Estoque sem internet. Ajuste (contagem) chega como DIFERENÇA em relação ao que
+-- o computador mostrava, para não apagar vendas de outro caixa feitas no mesmo período.
+create or replace function public.sinc_movimentar_estoque(p_uuid uuid, p_produto_id bigint, p_tipo text, p_quantidade numeric, p_delta numeric, p_observacao text, p_criado_em timestamptz)
+returns public.movimentacoes
+language plpgsql security definer set search_path = public
+as $$
+declare
+  m public.movimentacoes;
+  v_prod public.produtos;
+  v_novo numeric(12, 3);
+  v_obs text := nullif(trim(p_observacao), '');
+begin
+  if not public.tem_acesso() then raise exception 'Seu usuário não tem permissão para movimentar estoque.'; end if;
+  perform pg_advisory_xact_lock(hashtext(p_uuid::text));
+  select * into m from public.movimentacoes where uuid_local = p_uuid;
+  if found then return m; end if;
+  if p_tipo not in ('entrada', 'saida', 'ajuste') then raise exception 'Tipo de movimentação inválido.'; end if;
+  select * into v_prod from public.produtos where id = p_produto_id for update;
+  if not found then raise exception 'Produto não encontrado.'; end if;
+  if p_tipo = 'entrada' then v_novo := v_prod.estoque + abs(p_quantidade);
+  elsif p_tipo = 'saida' then v_novo := v_prod.estoque - abs(p_quantidade);
+  else v_novo := v_prod.estoque + coalesce(p_delta, 0);
+       v_obs := concat_ws(' · ', v_obs, format('contagem sem internet: %s', p_quantidade));
+  end if;
+  if v_novo < 0 then v_obs := concat_ws(' · ', v_obs, 'estoque ficou negativo'); end if;
+  perform set_config('lojafacil.movimentando', 'sim', true);
+  update public.produtos set estoque = v_novo where id = v_prod.id;
+  perform set_config('lojafacil.movimentando', '', true);
+  insert into public.movimentacoes (produto_id, produto_codigo, produto_nome, tipo, quantidade, saldo_anterior, saldo_apos, observacao, usuario_id, usuario_nome, criado_em, uuid_local)
+  values (v_prod.id, v_prod.codigo, v_prod.nome, p_tipo, case when p_tipo = 'ajuste' then greatest(v_novo, 0) else abs(p_quantidade) end,
+          v_prod.estoque, v_novo, v_obs, auth.uid(), public.meu_nome(), public.sinc_quando(p_criado_em), p_uuid)
+  returning * into m;
+  return m;
+end;
+$$;
+
+revoke all on function public.sinc_cliente(uuid, text, text, text, text, text) from public, anon;
+revoke all on function public.sinc_receber_fiado(uuid, bigint, uuid, text, uuid, bigint, timestamptz) from public, anon;
+revoke all on function public.sinc_receber_parcela(uuid, bigint, uuid, integer, text, uuid, bigint, timestamptz) from public, anon;
+revoke all on function public.sinc_movimentar_estoque(uuid, bigint, text, numeric, numeric, text, timestamptz) from public, anon;
+revoke all on function public.sinc_achar_cliente(bigint, uuid) from public, anon;
+grant execute on function public.sinc_cliente(uuid, text, text, text, text, text) to authenticated;
+grant execute on function public.sinc_receber_fiado(uuid, bigint, uuid, text, uuid, bigint, timestamptz) to authenticated;
+grant execute on function public.sinc_receber_parcela(uuid, bigint, uuid, integer, text, uuid, bigint, timestamptz) to authenticated;
+grant execute on function public.sinc_movimentar_estoque(uuid, bigint, text, numeric, numeric, text, timestamptz) to authenticated;
+
+-- Conferência: deve listar as 8 funções.
 select proname as funcao_criada from pg_proc
- where proname in ('sinc_abrir_caixa', 'sinc_movimento_caixa', 'sinc_venda', 'sinc_fechar_caixa') order by 1;
+ where proname in ('sinc_abrir_caixa', 'sinc_movimento_caixa', 'sinc_venda', 'sinc_fechar_caixa',
+                   'sinc_cliente', 'sinc_receber_fiado', 'sinc_receber_parcela', 'sinc_movimentar_estoque') order by 1;

@@ -607,7 +607,7 @@ function JanelaPagamento({ teclas, caixa, total, itens, desconto, onConcluida, o
       // Grava PRIMEIRO neste computador (funciona sem internet); a fila envia ao servidor.
       const venda = await finalizarVendaLocal({
         caixa, perfil: eu!, ehAdmin: admin, config: cfgLoja, itens, desconto,
-        pagamentos: lista.map(({ cliente_nome: _n, total_com_juros: _t, ...p }) => p),
+        pagamentos: lista.map(({ cliente_nome: _n, total_com_juros: _t, ...p }) => ({ ...p, cliente: p.forma === "crediario" ? credCliente : null })),
         clienteNome: cliente.trim() || null, clienteTelefone: telefone.trim() || null,
       });
       onConcluida(venda);

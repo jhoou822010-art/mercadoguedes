@@ -83,6 +83,8 @@ export interface ItemVenda { p: ProdutoView; quantidade: number; avulso?: boolea
 export interface PagamentoVenda {
   forma: FormaPagamento; valor: number;
   cliente_id?: number; parcelas?: number; primeiro_vencimento?: string; juros_percentual?: number;
+  /** Cliente escolhido na tela (caso ainda não esteja na cópia deste computador). */
+  cliente?: Cliente | null;
 }
 
 const FORMAS_VALIDAS = ["dinheiro", "pix", "debito", "credito", "vale_alimentacao", "vale_refeicao", "fiado", "crediario", "outro"];
@@ -143,7 +145,8 @@ export async function finalizarVendaLocal(a: {
   const pagamentos: VendaPagamento[] = a.pagamentos.map((p, n) => ({ id: id * 100 - n, venda_id: id, forma: p.forma, valor: centavos(p.valor), fiado_recebido_em: null, fiado_recebido_forma: null, fiado_recebido_por: null }));
   if (creds.length === 1) {
     const c = creds[0];
-    cliente = await lerUm<Cliente>("clientes", Number(c.cliente_id));
+    cliente = (await lerUm<Cliente>("clientes", Number(c.cliente_id))) ?? c.cliente ?? undefined;
+    if (cliente && c.cliente) await gravarVarios("clientes", [cliente]);
     if (!cliente) throw new Error("Para vender no crediário, escolha um cliente cadastrado.");
     if (!cliente.ativo) throw new Error(`O cliente "${cliente.nome}" está inativo.`);
     const n = Math.round(Number(c.parcelas ?? 1));
@@ -190,7 +193,7 @@ export async function finalizarVendaLocal(a: {
         ? { avulso: true, descricao: i.produto_nome, preco: i.preco_unitario, quantidade: i.quantidade }
         : { produto_id: i.produto_id, quantidade: i.quantidade, preco_unitario: i.preco_unitario, produto_codigo: i.produto_codigo, produto_nome: i.produto_nome, unidade: i.unidade })),
       p_desconto: desconto,
-      p_pagamentos: a.pagamentos.map((p) => ({ forma: p.forma, valor: centavos(p.valor), ...(p.forma === "crediario" ? { cliente_id: p.cliente_id, parcelas: p.parcelas, primeiro_vencimento: p.primeiro_vencimento, juros_percentual: p.juros_percentual } : {}) })),
+      p_pagamentos: a.pagamentos.map(({ cliente: _c, ...p }) => ({ forma: p.forma, valor: centavos(p.valor), ...(p.forma === "crediario" ? { cliente_id: p.cliente_id, cliente_uuid: (cliente as Cliente & { uuid_local?: string })?.uuid_local ?? null, parcelas: p.parcelas, primeiro_vencimento: p.primeiro_vencimento, juros_percentual: p.juros_percentual } : {}) })),
       p_cliente_nome: venda.cliente_nome, p_cliente_telefone: venda.cliente_telefone,
       p_criado_em: agora, p_codigo_local: codigo, p_dispositivo: disp,
     },
@@ -283,4 +286,88 @@ export async function vendasLocaisNaoEnviadas(): Promise<VendaCompleta[]> {
   const todas = await lerTodos<VendaCompleta>("vendas");
   const doServidor = new Set(todas.filter((v) => v.id > 0 && v.uuid_local).map((v) => v.uuid_local));
   return todas.filter((v) => v.id < 0 && !doServidor.has(v.uuid_local ?? "")).sort((a, b) => b.criado_em.localeCompare(a.criado_em));
+}
+
+/* --------------------- recebimentos (fiado / parcela) --------------------- */
+async function caixaParaReceber(perfil: Perfil) {
+  const c = await caixaAbertoLocal(perfil.id);
+  if (!c) throw new Error("Abra o seu caixa para receber (o dinheiro entra no seu caixa).");
+  return c;
+}
+
+/** Recebe um fiado (com ou sem internet). A venda pode ser do servidor ou feita aqui. */
+export async function receberFiadoLocal(a: { perfil: Perfil; pagamentoId: number; vendaId: number; vendaUuid: string | null; valor: number; forma: FormaPagamento }) {
+  const caixa = await caixaParaReceber(a.perfil);
+  const venda = await lerUm<VendaCompleta>("vendas", a.vendaId);
+  const agora = new Date().toISOString(), u = uuid(), id = idLocal();
+  const mov: MovimentoCaixa = { id, caixa_id: caixa.id, caixa_uuid: caixa.uuid_local ?? null, tipo: "recebimento_fiado", forma: a.forma, valor: centavos(a.valor), observacao: "Fiado", criado_em: agora, uuid_local: u, sync: "pendente" };
+  const op = novaOperacao({ id: u, tipo: "receber_fiado", usuario_id: a.perfil.id, dispositivo: meuDispositivo(), alvo: { tabela: "caixa_movimentos", id }, funcao: "sinc_receber_fiado",
+    parametros: { p_uuid: u, p_pagamento_id: a.pagamentoId > 0 ? a.pagamentoId : null, p_venda_uuid: a.vendaUuid, p_forma: a.forma, ...refCaixa(caixa), p_recebido_em: agora },
+    meta: { venda_id: a.vendaId, pagamento_id: a.pagamentoId } });
+  const gravar: { tabela: "vendas" | "caixa_movimentos" | "fila"; linhas: unknown[] }[] = [{ tabela: "caixa_movimentos", linhas: [mov] }, { tabela: "fila", linhas: [op] }];
+  if (venda) gravar.push({ tabela: "vendas", linhas: [{ ...venda, venda_pagamentos: venda.venda_pagamentos.map((p) => (p.id === a.pagamentoId ? { ...p, fiado_recebido_em: agora, fiado_recebido_forma: a.forma, fiado_recebido_por: a.perfil.nome } : p)) }] });
+  await gravarJunto(gravar);
+  await atualizarResumoFila();
+  void processarFila();
+}
+
+/** Recebe uma parcela do crediário (com ou sem internet). */
+export async function receberParcelaLocal(a: { perfil: Perfil; parcela: Parcela; vendaUuid: string | null; forma: FormaPagamento }) {
+  const caixa = await caixaParaReceber(a.perfil);
+  const agora = new Date().toISOString(), u = uuid(), id = idLocal(), p = a.parcela;
+  const mov: MovimentoCaixa = { id, caixa_id: caixa.id, caixa_uuid: caixa.uuid_local ?? null, tipo: "recebimento_crediario", forma: a.forma, valor: centavos(Number(p.valor)), observacao: `Parcela ${p.numero}/${p.total_parcelas}`, criado_em: agora, uuid_local: u, sync: "pendente" };
+  const op = novaOperacao({ id: u, tipo: "receber_parcela", usuario_id: a.perfil.id, dispositivo: meuDispositivo(), alvo: { tabela: "caixa_movimentos", id }, funcao: "sinc_receber_parcela",
+    parametros: { p_uuid: u, p_parcela_id: p.id > 0 ? p.id : null, p_venda_uuid: a.vendaUuid, p_numero: p.numero, p_forma: a.forma, ...refCaixa(caixa), p_recebido_em: agora },
+    meta: { parcela_id: p.id, venda_id: p.venda_id } });
+  const paga = { status: "paga", pago_em: agora, pago_forma: a.forma, pago_por: a.perfil.nome, caixa_id: caixa.id };
+  const gravar: { tabela: "vendas" | "parcelas" | "caixa_movimentos" | "fila"; linhas: unknown[] }[] = [{ tabela: "caixa_movimentos", linhas: [mov] }, { tabela: "fila", linhas: [op] }];
+  if (p.id > 0) {
+    const atual = await lerUm<Parcela>("parcelas", p.id);
+    if (atual) gravar.push({ tabela: "parcelas", linhas: [{ ...atual, ...paga }] });
+  } else {
+    const venda = await lerUm<VendaCompleta>("vendas", p.venda_id);
+    if (venda) gravar.push({ tabela: "vendas", linhas: [{ ...venda, parcelas: (venda.parcelas ?? []).map((x) => (x.numero === p.numero ? { ...x, ...paga } : x)) }] });
+  }
+  await gravarJunto(gravar);
+  await atualizarResumoFila();
+  void processarFila();
+}
+
+/* ------------------------- cliente novo sem internet ------------------------- */
+export async function cadastrarClienteLocal(a: { perfil: Perfil; nome: string; telefone: string | null; cpf: string | null; endereco?: string | null; observacao?: string | null }): Promise<Cliente> {
+  if (a.nome.trim().length < 2) throw new Error("Informe o nome do cliente.");
+  if (a.cpf) {
+    const igual = (await lerTodos<Cliente>("clientes")).find((c) => c.cpf && c.cpf === a.cpf);
+    if (igual) throw new Error("Já existe um cliente com este CPF/CNPJ.");
+  }
+  const id = idLocal(), u = uuid(), agora = new Date().toISOString();
+  const cliente = { id, nome: a.nome.trim(), telefone: a.telefone, cpf: a.cpf, endereco: a.endereco ?? null, limite_credito: null, observacao: a.observacao ?? null,
+    ativo: true, criado_em: agora, atualizado_em: agora, uuid_local: u, sync: "pendente" } as Cliente & { uuid_local: string; sync: string };
+  const op = novaOperacao({ id: u, tipo: "cliente", usuario_id: a.perfil.id, dispositivo: meuDispositivo(), alvo: { tabela: "clientes", id }, funcao: "sinc_cliente",
+    parametros: { p_uuid: u, p_nome: cliente.nome, p_telefone: a.telefone, p_cpf: a.cpf, p_endereco: a.endereco ?? null, p_observacao: a.observacao ?? null } });
+  await gravarJunto([{ tabela: "clientes", linhas: [cliente] }, { tabela: "fila", linhas: [op] }]);
+  await atualizarResumoFila();
+  void processarFila();
+  return cliente;
+}
+
+/* ------------------------- estoque sem internet ------------------------- */
+export interface MovEstoqueLocal { id: number; produto_id: number; produto_codigo: string; produto_nome: string; tipo: "entrada" | "saida" | "ajuste"; quantidade: number; saldo_anterior: number; saldo_apos: number; observacao: string | null; usuario_id: string; usuario_nome: string; criado_em: string; uuid_local: string; delta: number; sync: string; sincronizado_em?: string | null }
+
+/** Entrada, saída ou ajuste feito sem internet. O ajuste vai ao servidor como DIFERENÇA do que a tela mostrava. */
+export async function movimentarEstoqueLocal(a: { perfil: Perfil; produto: ProdutoView; tipo: "entrada" | "saida" | "ajuste"; quantidade: number; observacao: string | null }): Promise<MovEstoqueLocal> {
+  const q = Number(a.quantidade), atual = Number(a.produto.estoque);
+  if (!(q >= 0) || (a.tipo !== "ajuste" && q === 0)) throw new Error("Informe uma quantidade maior que zero.");
+  const novo = a.tipo === "entrada" ? atual + q : a.tipo === "saida" ? atual - q : q;
+  if (a.tipo === "saida" && novo < 0) throw new Error(`Estoque insuficiente: saldo atual ${atual} e saída de ${q}.`);
+  const id = idLocal(), u = uuid(), agora = new Date().toISOString();
+  const mov: MovEstoqueLocal = { id, produto_id: a.produto.id, produto_codigo: a.produto.codigo, produto_nome: a.produto.nome, tipo: a.tipo, quantidade: q,
+    saldo_anterior: atual, saldo_apos: Math.round(novo * 1000) / 1000, observacao: a.observacao, usuario_id: a.perfil.id, usuario_nome: a.perfil.nome, criado_em: agora,
+    uuid_local: u, delta: Math.round((novo - atual) * 1000) / 1000, sync: "pendente" };
+  const op = novaOperacao({ id: u, tipo: "estoque", usuario_id: a.perfil.id, dispositivo: meuDispositivo(), alvo: { tabela: "movimentacoes", id }, funcao: "sinc_movimentar_estoque",
+    parametros: { p_uuid: u, p_produto_id: a.produto.id, p_tipo: a.tipo, p_quantidade: q, p_delta: mov.delta, p_observacao: a.observacao, p_criado_em: agora } });
+  await gravarJunto([{ tabela: "movimentacoes", linhas: [mov] }, { tabela: "fila", linhas: [op] }]);
+  await atualizarResumoFila();
+  void processarFila();
+  return mov;
 }

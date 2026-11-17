@@ -13,7 +13,7 @@ const ROTULO = {
 } as const;
 
 /** Indicador discreto de conexão (fica no menu). */
-const NOME_OP: Record<string, string> = { abrir_caixa: "Abertura de caixa", venda: "Venda", movimento_caixa: "Sangria/suprimento", fechar_caixa: "Fechamento de caixa" };
+const NOME_OP: Record<string, string> = { abrir_caixa: "Abertura de caixa", venda: "Venda", movimento_caixa: "Sangria/suprimento", fechar_caixa: "Fechamento de caixa", receber_fiado: "Recebimento de fiado", receber_parcela: "Recebimento de parcela", cliente: "Cliente novo", estoque: "Movimentação de estoque" };
 
 /** Janela com o que ainda falta enviar ao servidor e os erros (com "Tentar de novo"). */
 function JanelaEnvio({ onFechar }: { onFechar: () => void }) {
@@ -102,7 +102,7 @@ export function SemConexao() {
         <strong>{estado === "offline" ? "Sem internet." : "O servidor não está respondendo."}</strong>{" "}
         As telas mostram a <strong>cópia guardada neste computador</strong> (atualizada em {quando(copia.ultima)}).
         {perfilOffline && perfilConferidoEm ? ` Seu acesso foi conferido pela última vez em ${quando(perfilConferidoEm)}.` : ""}
-        {" "}<strong>O caixa funciona normalmente</strong> (abrir, vender, sangria, fechar): tudo fica guardado aqui e é enviado sozinho quando a conexão voltar. Cadastros, estoque manual e recebimentos ainda precisam do servidor.
+        {" "}<strong>O caixa funciona normalmente</strong> (abrir, vender, sangria, receber fiado e parcela, cadastrar cliente, movimentar estoque, fechar): tudo fica guardado aqui e é enviado sozinho quando a conexão voltar. Cadastro de produto, preços, cancelamento de venda e usuários precisam de conexão.
       </div>
     );
   }

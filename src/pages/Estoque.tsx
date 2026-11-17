@@ -1,4 +1,8 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { useAuth } from "../contexts/AuthContext";
+import { movimentarEstoqueLocal } from "../lib/local/caixaLocal";
+import { estadoConexaoAgora } from "../lib/conexao";
+import { ehErroDeRede } from "../lib/supabase";
 import { doServidorOuLocal } from "../lib/local/fallback";
 import { movimentacoesLocal, produtoLocal } from "../lib/local/consultas";
 import { useSearchParams } from "react-router-dom";
@@ -20,6 +24,7 @@ const POR_PAGINA = 30;
 
 export default function Estoque() {
   const avisar = useToast();
+  const { perfil } = useAuth();
   const [params, setParams] = useSearchParams();
   const [produto, setProduto] = useState<ProdutoView | null>(null);
   const [tipo, setTipo] = useState<TipoMov>("entrada");
@@ -105,19 +110,24 @@ export default function Estoque() {
   async function gravar() {
     if (!produto) return;
     setSalvando(true);
-    const { data, error } = await supabase.rpc("movimentar_estoque", {
-      p_produto_id: produto.id,
-      p_tipo: tipo,
-      p_quantidade: quantidade,
-      p_observacao: motivo.trim() || null,
-    });
+    // Com servidor: grava direto. Sem servidor: grava neste computador e envia depois.
+    const offline = ["offline", "servidor"].includes(estadoConexaoAgora());
+    let mov: { saldo_apos: number } | null = null;
+    let erroGrav: unknown = null;
+    if (!offline) {
+      const r = await supabase.rpc("movimentar_estoque", { p_produto_id: produto.id, p_tipo: tipo, p_quantidade: quantidade, p_observacao: motivo.trim() || null });
+      if (r.error && !ehErroDeRede(r.error)) erroGrav = r.error; else if (!r.error) mov = r.data as Movimentacao;
+    }
+    if (!mov && !erroGrav) {
+      try { mov = await movimentarEstoqueLocal({ perfil: perfil!, produto, tipo, quantidade, observacao: motivo.trim() || null }); }
+      catch (e) { erroGrav = e; }
+    }
     setSalvando(false);
     setConfirmando(false);
-    if (error) return setErro(mensagemErro(error));
-    const mov = data as Movimentacao;
-    avisar("sucesso", `${NOME_TIPO[tipo]} registrada: ${produto.nome} agora tem ${fmtQtd(mov.saldo_apos, produto.unidade)} ${produto.unidade}.`);
+    if (erroGrav || !mov) return setErro(mensagemErro(erroGrav));
+    avisar("sucesso", `${NOME_TIPO[tipo]} registrada: ${produto.nome} agora tem ${fmtQtd(mov.saldo_apos, produto.unidade)} ${produto.unidade}.${mov && "uuid_local" in mov ? " (sem internet: será enviada sozinha)" : ""}`);
     // Recarrega o produto para mostrar o novo saldo e indicadores.
-    const { data: p } = await supabase.from("vw_produtos").select("*").eq("id", produto.id).maybeSingle();
+    const { data: p } = await doServidorOuLocal<ProdutoView | null>(() => supabase.from("vw_produtos").select("*").eq("id", produto.id).maybeSingle(), () => produtoLocal(produto.id));
     if (p) setProduto(p as ProdutoView);
     setQtd("");
     setMotivo("");

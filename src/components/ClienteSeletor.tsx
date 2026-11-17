@@ -1,4 +1,8 @@
 import { useEffect, useState } from "react";
+import { cadastrarClienteLocal } from "../lib/local/caixaLocal";
+import { estadoConexaoAgora } from "../lib/conexao";
+import { ehErroDeRede } from "../lib/supabase";
+import { useAuth } from "../contexts/AuthContext";
 import { doServidorOuLocal } from "../lib/local/fallback";
 import { clientesLocal, parcelasLocal } from "../lib/local/consultas";
 import { supabase, mensagemErro } from "../lib/supabase";
@@ -13,6 +17,7 @@ import { CampoDocumento, erroDocumento } from "./CampoDocumento";
  * e permite cadastrar um cliente novo sem sair da venda.
  */
 export function ClienteSeletor({ escolhido, onEscolher }: { escolhido: Cliente | null; onEscolher: (c: Cliente | null) => void }) {
+  const { perfil } = useAuth();
   const [texto, setTexto] = useState("");
   const [lista, setLista] = useState<Cliente[]>([]);
   const [emAberto, setEmAberto] = useState<number | null>(null);
@@ -54,9 +59,15 @@ export function ClienteSeletor({ escolhido, onEscolher }: { escolhido: Cliente |
     const errDoc = erroDocumento(cpf);
     if (errDoc) return setErro(errDoc);
     setSalvando(true);
-    const { data, error } = await supabase.from("clientes")
+    const offline = ["offline", "servidor"].includes(estadoConexaoAgora());
+    let { data, error } = offline ? { data: null, error: { message: "Failed to fetch" } as { message: string; code?: string } } : await supabase.from("clientes")
       .insert({ nome: nome.trim(), telefone: telefone.trim() || null, cpf: cpf.trim() || null })
       .select("*").single();
+    // Sem internet: cadastra neste computador (vale para o crediário na hora) e envia depois.
+    if (error && ehErroDeRede(error)) {
+      try { data = await cadastrarClienteLocal({ perfil: perfil!, nome, telefone: telefone.trim() || null, cpf: cpf.trim() || null }); error = null; }
+      catch (e) { error = { message: mensagemErro(e) }; }
+    }
     setSalvando(false);
     if (error) return setErro(error.code === "23505" ? "Já existe um cliente com este CPF/CNPJ." : mensagemErro(error));
     onEscolher(data as Cliente);

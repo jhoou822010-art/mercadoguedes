@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
 import { doServidorOuLocal } from "../lib/local/fallback";
 import { caixasLocal, clientesLocal, fiadosLocal, parcelasLocal, vendasLocal } from "../lib/local/consultas";
-import { vendasLocaisNaoEnviadas } from "../lib/local/caixaLocal";
+import { cadastrarClienteLocal, receberFiadoLocal, receberParcelaLocal, vendasLocaisNaoEnviadas } from "../lib/local/caixaLocal";
+import { processarFila } from "../lib/local/fila";
 import { estadoConexaoAgora } from "../lib/conexao";
 import { ehErroDeRede } from "../lib/supabase";
 import { useSearchParams } from "react-router-dom";
@@ -310,7 +311,7 @@ type FiadoLinha = VendaPagamento & { vendas: { id: number; cliente_nome: string 
 
 function ListaFiado() {
   const moeda = useMoeda();
-  const { config, valoresOcultos } = useAuth();
+  const { config, valoresOcultos, perfil } = useAuth();
   const avisar = useToast();
   const [mostrarRecebidos, setMostrarRecebidos] = useState(false);
   const [lista, setLista] = useState<FiadoLinha[] | null>(null);
@@ -402,8 +403,11 @@ function ListaFiado() {
           descricao={<p><strong>{recebendo.vendas.cliente_nome}</strong> · venda nº {recebendo.venda_id} de {fmtDataHora(recebendo.vendas.criado_em)}</p>}
           onFechar={() => setRecebendo(null)}
           onConfirmar={async (forma) => {
-            const { error } = await supabase.rpc("receber_fiado", { p_pagamento_id: recebendo.id, p_forma: forma });
-            if (error) return mensagemErro(error);
+            // Grava neste computador (funciona sem internet) e envia ao servidor (na hora, se houver conexão).
+            try {
+              await receberFiadoLocal({ perfil: perfil!, pagamentoId: recebendo.id, vendaId: recebendo.venda_id, vendaUuid: (recebendo.vendas as { uuid_local?: string | null }).uuid_local ?? null, valor: Number(recebendo.valor), forma });
+            } catch (e) { return mensagemErro(e); }
+            await processarFila();
             avisar("sucesso", `Fiado de ${recebendo.vendas.cliente_nome} (${moeda(recebendo.valor)}) recebido em ${NOME_FORMA[forma].toLowerCase()}.`);
             setRecebendo(null);
             void carregar();
@@ -438,7 +442,7 @@ type FiltroParcela = "abertas" | "atrasadas" | "pagas";
 
 function ListaCrediario() {
   const moeda = useMoeda();
-  const { config, valoresOcultos } = useAuth();
+  const { config, valoresOcultos, perfil } = useAuth();
   const avisar = useToast();
   const [filtro, setFiltro] = useState<FiltroParcela>("abertas");
   const [busca, setBusca] = useState("");
@@ -544,8 +548,10 @@ function ListaCrediario() {
           descricao={<p><strong>{recebendo.clientes?.nome}</strong> · parcela {recebendo.numero}/{recebendo.total_parcelas} da venda nº {recebendo.venda_id} · vence {fmtData(recebendo.vencimento)}</p>}
           onFechar={() => setRecebendo(null)}
           onConfirmar={async (forma) => {
-            const { error } = await supabase.rpc("receber_parcela", { p_parcela_id: recebendo.id, p_forma: forma });
-            if (error) return mensagemErro(error);
+            try {
+              await receberParcelaLocal({ perfil: perfil!, parcela: recebendo, vendaUuid: (recebendo.vendas as { uuid_local?: string | null })?.uuid_local ?? null, forma });
+            } catch (e) { return mensagemErro(e); }
+            await processarFila();
             avisar("sucesso", `Parcela ${recebendo.numero}/${recebendo.total_parcelas} de ${recebendo.clientes?.nome} recebida (${moeda(recebendo.valor)}).`);
             setRecebendo(null);
             void carregar();
@@ -678,6 +684,7 @@ function ListaClientes() {
 
 function JanelaCliente({ cliente, ehAdmin, onFechar, onSalvo }: { cliente: Cliente | null; ehAdmin: boolean; onFechar: () => void; onSalvo: () => void }) {
   const avisar = useToast();
+  const { perfil } = useAuth();
   const [nome, setNome] = useState(cliente?.nome ?? "");
   const [telefone, setTelefone] = useState(cliente?.telefone ?? "");
   const [cpf, setCpf] = useState(cliente?.cpf ? mascaraDocumento(cliente.cpf) : "");
@@ -705,12 +712,20 @@ function JanelaCliente({ cliente, ehAdmin, onFechar, onSalvo }: { cliente: Clien
     };
     if (ehAdmin) dados.limite_credito = lim;
     setSalvando(true);
-    const { error } = cliente
+    const offline = ["offline", "servidor"].includes(estadoConexaoAgora());
+    let { error } = offline ? { error: { message: "Failed to fetch" } as { message: string; code?: string } } : cliente
       ? await supabase.from("clientes").update(dados).eq("id", cliente.id)
       : await supabase.from("clientes").insert(dados);
+    let semInternet = false;
+    if (error && ehErroDeRede(error)) {
+      if (cliente) { setSalvando(false); return setErro("Editar um cliente já cadastrado precisa de conexão. Tente quando a internet voltar."); }
+      // Cliente NOVO sem internet: cadastra neste computador e envia depois.
+      try { await cadastrarClienteLocal({ perfil: perfil!, nome, telefone: telefone.trim() || null, cpf: cpf.trim() || null, endereco: endereco.trim() || null, observacao: obs.trim() || null }); error = null; semInternet = true; }
+      catch (e) { error = { message: mensagemErro(e) }; }
+    }
     setSalvando(false);
     if (error) return setErro(error.code === "23505" ? "Já existe um cliente com este CPF/CNPJ." : mensagemErro(error));
-    avisar("sucesso", cliente ? "Cliente atualizado." : "Cliente cadastrado.");
+    avisar("sucesso", cliente ? "Cliente atualizado." : semInternet ? `Cliente cadastrado neste computador (será enviado quando a internet voltar).${ehAdmin && lim !== null ? " Defina o limite de crédito depois, com internet." : ""}` : "Cliente cadastrado.");
     onSalvo();
   }
 
