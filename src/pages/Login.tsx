@@ -1,5 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { emailDoLogin } from "../lib/login";
+import { entrarSemInternet, guardarNoCofre } from "../lib/cofreSessoes";
+import { ehErroDeRede } from "../lib/supabase";
 import { InstalarApp } from "../components/InstalarApp";
 import { supabase, mensagemErro } from "../lib/supabase";
 import { Logo } from "../components/Layout";
@@ -23,8 +25,17 @@ export default function Login() {
     setEnviando(true);
     try {
       if (modo === "entrar") {
-        const { error } = await supabase.auth.signInWithPassword({ email: emailDoLogin(email), password: senha });
+        const login = emailDoLogin(email);
+        const { data: entrou, error } = await supabase.auth.signInWithPassword({ email: login, password: senha });
+        if (error && ehErroDeRede(error)) {
+          // Sem internet: entra com o que ficou guardado neste computador (se já entrou aqui antes).
+          const msg = await entrarSemInternet(login, senha);
+          if (msg) { setErro(msg); return; }
+          window.location.reload();
+          return;
+        }
         if (error) throw error;
+        if (entrou.session) void guardarNoCofre(login, senha, entrou.session);
       } else {
         const { data, error } = await supabase.auth.signUp({
           email: email.trim(),

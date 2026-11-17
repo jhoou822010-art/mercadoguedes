@@ -1,4 +1,4 @@
-import { copyFileSync, existsSync, readFileSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { defineConfig, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
@@ -26,7 +26,18 @@ function paginasParaGithubPages(): Plugin {
       // Aplicativo instalável: cada publicação ganha uma versão nova do service worker,
       // o que faz os computadores e celulares baixarem a versão nova e apagarem a antiga.
       const sw = resolve(dist, "sw.js");
-      if (existsSync(sw)) writeFileSync(sw, readFileSync(sw, "utf8").replace("__VERSAO__", new Date().toISOString()));
+      if (existsSync(sw)) {
+        // Todos os arquivos publicados (menos as cópias de rota e o próprio sw), para guardar offline.
+        const listar = (dir: string, pre = ""): string[] => readdirSync(dir).flatMap((n) => {
+          const caminho = resolve(dir, n);
+          return statSync(caminho).isDirectory() ? listar(caminho, `${pre}${n}/`) : [`${pre}${n}`];
+        });
+        const pular = new Set(["sw.js", "404.html", "index.html", ...ROTAS.map((r) => `${r}.html`)]);
+        const arquivos = listar(dist).filter((a) => !pular.has(a));
+        writeFileSync(sw, readFileSync(sw, "utf8")
+          .replace("__VERSAO__", new Date().toISOString())
+          .replace("/*__ARQUIVOS__*/[]", JSON.stringify(arquivos)));
+      }
     },
   };
 }

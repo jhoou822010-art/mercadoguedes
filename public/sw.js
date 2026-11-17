@@ -7,12 +7,20 @@
   A versão abaixo é trocada a cada publicação (vite.config.ts), o que apaga os arquivos antigos.
 */
 const VERSAO = "__VERSAO__";
+// Lista de TODOS os arquivos do sistema desta versão (preenchida na publicação).
+// São guardados de uma vez na instalação: o sistema abre completo sem internet,
+// mesmo telas que ainda não foram abertas, e mesmo depois de reiniciar o computador.
+const ARQUIVOS = /*__ARQUIVOS__*/[];
 const CACHE = `lojafacil-${VERSAO}`;
 const BASE = new URL("./", self.location).pathname;
 
 self.addEventListener("install", (e) => {
-  e.waitUntil(caches.open(CACHE).then((c) => c.addAll([BASE, `${BASE}manifest.webmanifest`]).catch(() => {})));
-  self.skipWaiting();
+  // Se faltar algum arquivo, a instalação falha e a versão anterior (que funciona) continua.
+  e.waitUntil(
+    caches.open(CACHE)
+      .then((c) => c.addAll([BASE, ...ARQUIVOS.map((a) => BASE + a)]))
+      .then(() => self.skipWaiting()),
+  );
 });
 
 self.addEventListener("activate", (e) => {

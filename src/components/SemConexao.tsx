@@ -1,32 +1,58 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useConexao } from "../lib/conexao";
+import { useAuth } from "../contexts/AuthContext";
 
-/**
- * Aviso fixo quando o computador fica sem internet. O sistema depende da
- * internet (os dados ficam no Supabase): sem ela, vendas e estoque não são gravados.
- */
+const ROTULO = {
+  online: { texto: "Online", cor: "bg-ok-600", dica: "Conectado ao servidor." },
+  servidor: { texto: "Servidor fora do ar", cor: "bg-atencao-500", dica: "Há internet, mas o servidor não respondeu." },
+  offline: { texto: "Offline", cor: "bg-critico-600", dica: "Sem internet. O sistema continua aberto com os dados guardados neste computador." },
+  verificando: { texto: "Verificando…", cor: "bg-slate-400", dica: "Conferindo a conexão com o servidor." },
+} as const;
+
+/** Indicador discreto de conexão (fica no menu). */
+export function IndicadorConexao({ claro = true }: { claro?: boolean }) {
+  const { estado } = useConexao();
+  const r = ROTULO[estado];
+  return (
+    <span className={`inline-flex items-center gap-1.5 text-xs font-medium ${claro ? "text-petroleo-100" : "text-slate-600"}`} title={r.dica} role="status" aria-label={`Conexão: ${r.texto}`}>
+      <span className={`h-2.5 w-2.5 rounded-full ${r.cor} ${estado === "verificando" ? "animate-pulse" : ""}`} aria-hidden="true" />
+      {r.texto}
+    </span>
+  );
+}
+
+/** Faixa de aviso no alto da tela quando não há servidor. */
 export function SemConexao() {
-  const [online, setOnline] = useState(typeof navigator === "undefined" ? true : navigator.onLine);
+  const { estado } = useConexao();
+  const { perfilOffline, perfilConferidoEm } = useAuth();
   const [voltou, setVoltou] = useState(false);
+  const anterior = useRef(estado);
 
   useEffect(() => {
-    const on = () => { setOnline(true); setVoltou(true); setTimeout(() => setVoltou(false), 5000); };
-    const off = () => { setOnline(false); setVoltou(false); };
-    window.addEventListener("online", on);
-    window.addEventListener("offline", off);
-    return () => { window.removeEventListener("online", on); window.removeEventListener("offline", off); };
-  }, []);
+    if ((anterior.current === "offline" || anterior.current === "servidor") && estado === "online") {
+      setVoltou(true);
+      const t = setTimeout(() => setVoltou(false), 5000);
+      anterior.current = estado;
+      return () => clearTimeout(t);
+    }
+    anterior.current = estado;
+  }, [estado]);
 
-  if (!online) {
+  if (estado === "offline" || estado === "servidor") {
     return (
       <div role="alert" className="nao-imprimir mb-4 rounded-lg border-l-4 border-critico-600 bg-critico-50 px-4 py-3 text-sm text-critico-700">
-        <strong>Sem internet.</strong> Vendas, estoque e cadastros não serão gravados até a conexão voltar. Se estiver no meio de uma venda, não feche a página: os itens ficam guardados nesta aba.
+        <strong>{estado === "offline" ? "Sem internet." : "O servidor não está respondendo."}</strong>{" "}
+        O sistema continua aberto neste computador
+        {perfilOffline && perfilConferidoEm ? ` (seu acesso foi conferido pela última vez em ${new Date(perfilConferidoEm).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })})` : ""}.
+        Nesta versão, as telas que mostram ou gravam dados (vendas, estoque, cadastros) ainda precisam do servidor: elas voltam a funcionar quando a conexão voltar.
+        Se estiver no meio de uma venda, os itens ficam guardados.
       </div>
     );
   }
   if (voltou) {
     return (
       <div role="status" className="nao-imprimir mb-4 rounded-lg border-l-4 border-ok-600 bg-ok-50 px-4 py-3 text-sm text-ok-700">
-        Internet de volta. Pode continuar.
+        Conexão com o servidor de volta. Pode continuar.
       </div>
     );
   }

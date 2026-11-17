@@ -162,6 +162,17 @@ export function Calculadora({ onFechar, onUsar, textoUsar = "Usar este valor" }:
     (document.activeElement as HTMLElement | null)?.blur();
   }, []);
 
+  // Não deixa a calculadora passar da parte de baixo da tela (celular, tela pequena).
+  useEffect(() => {
+    const el = caixaRef.current;
+    if (!el) return;
+    const h = el.offsetHeight;
+    setPos((p) => {
+      const maxY = Math.max(8, window.innerHeight - h - 8);
+      return p.y > maxY ? { ...p, y: maxY } : p;
+    });
+  }, [larg, mini]);
+
   useEffect(() => {
     if (!ativa) return;
     const tecla = (e: KeyboardEvent) => {

@@ -4,7 +4,7 @@ import { useAuth } from "../contexts/AuthContext";
 import { MeuPerfil } from "./MeuPerfil";
 import { LOGO_PADRAO } from "../lib/marca";
 import { Carregando } from "./Ui";
-import { SemConexao } from "./SemConexao";
+import { IndicadorConexao, SemConexao } from "./SemConexao";
 import { InstalarApp } from "./InstalarApp";
 import { ErroTela } from "./ErroTela";
 import { abrirCaixaEmJanela, comprasEmAndamento, ehJanelaDoCaixa, EVENTO_CARRINHO, ouvirFixarCaixa } from "../lib/carrinho";
@@ -132,6 +132,7 @@ function Usuario() {
   const [editando, setEditando] = useState(false);
   return (
     <div className="border-t border-white/10 pt-4 text-sm">
+      <div className="mb-2 px-2"><IndicadorConexao /></div>
       <button onClick={() => setEditando(true)} className="group mb-3 block w-full rounded-lg px-2 py-1 text-left hover:bg-white/10" title="Editar meu nome e senha">
         <span className="block truncate font-medium text-white">{perfil?.nome}</span>
         <span className="block text-xs text-petroleo-200">{perfil?.papel === "admin" ? "Administrador" : "Operador"} · <span className="underline group-hover:text-white">Meu perfil</span></span>
@@ -180,7 +181,7 @@ export function Layout() {
   return (
     <div className="min-h-screen lg:flex">
       {/* Barra lateral (computador) */}
-      <aside className="nao-imprimir hidden w-64 shrink-0 flex-col justify-between bg-petroleo-800 p-4 lg:sticky lg:top-0 lg:flex lg:h-screen">
+      <aside className="nao-imprimir hidden w-64 shrink-0 flex-col justify-between bg-petroleo-800 p-4 lg:sticky lg:top-0 lg:flex lg:h-screen lg:overflow-y-auto">
         <div className="space-y-6">
           <Logo claro loja={loja} />
           <Menu />
@@ -191,13 +192,14 @@ export function Layout() {
       {/* Barra superior (celular/tablet) */}
       <header className="nao-imprimir sticky top-0 z-20 flex items-center justify-between bg-petroleo-800 px-4 py-3 lg:hidden">
         <Logo claro loja={loja} compacto />
+        <span className="ml-auto mr-2"><IndicadorConexao /></span>
         <button onClick={() => setMenuAberto(true)} className="rounded-lg p-2 text-2xl leading-none text-white hover:bg-white/10" aria-label="Abrir menu">
           ☰
         </button>
       </header>
       {menuAberto && (
         <div className="nao-imprimir fixed inset-0 z-30 bg-slate-900/50 lg:hidden" onClick={() => setMenuAberto(false)}>
-          <div className="flex h-full w-72 max-w-[85vw] flex-col justify-between bg-petroleo-800 p-4" onClick={(e) => e.stopPropagation()}>
+          <div className="flex h-full w-72 max-w-[85vw] flex-col justify-between gap-4 overflow-y-auto bg-petroleo-800 p-4" onClick={(e) => e.stopPropagation()}>
             <div className="space-y-6">
               <div className="flex items-start justify-between">
                 <Logo claro loja={loja} />
