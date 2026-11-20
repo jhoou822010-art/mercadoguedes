@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { doServidorOuLocal } from "../lib/local/fallback";
-import { categoriasEFornecedoresLocal, listarProdutosLocal, movimentacoesLocal } from "../lib/local/consultas";
+import { categoriasEFornecedoresLocal, listarProdutosLocal, movimentacoesLocal, porCodigo } from "../lib/local/consultas";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { supabase, mensagemErro } from "../lib/supabase";
 import { buscarTodos, termoBusca } from "../lib/data";
@@ -17,6 +17,11 @@ import { ProdutoForm } from "./ProdutoForm";
 const POR_PAGINA = 50;
 type Situacao = "ativos" | "inativos" | "todos";
 type Alerta = "" | "minimo" | "validade" | "vencidos";
+type Ordem = "codigo" | "nome";
+const CHAVE_ORDEM = "lojafacil.produtos.ordem";
+function ordemSalva(): Ordem {
+  try { return localStorage.getItem(CHAVE_ORDEM) === "nome" ? "nome" : "codigo"; } catch { return "codigo"; }
+}
 
 export default function Produtos() {
   const { ehAdmin } = useAuth();
@@ -29,6 +34,7 @@ export default function Produtos() {
   const [categoria, setCategoria] = useState("");
   const [alerta, setAlerta] = useState<Alerta>((params.get("alerta") as Alerta) ?? "");
   const [pagina, setPagina] = useState(0);
+  const [ordem, setOrdem] = useState<Ordem>(ordemSalva);
 
   const [lista, setLista] = useState<ProdutoView[] | null>(null);
   const [total, setTotal] = useState(0);
@@ -78,7 +84,8 @@ export default function Produtos() {
     setErro("");
     const t = termoBusca(buscaAplicada);
     const { data, error, count } = await doServidorOuLocal<ProdutoView[]>(
-      () => {
+      async () => {
+        const montar = (colunaOrdem: string) => {
         let q = supabase.from("vw_produtos").select("*", { count: "exact" });
         if (situacao !== "todos") q = q.eq("ativo", situacao === "ativos");
         if (categoria) q = q.eq("categoria", categoria);
@@ -86,11 +93,19 @@ export default function Produtos() {
         if (alerta === "validade") q = q.in("situacao_validade", ["vencido", "critico", "proximo"]);
         if (alerta === "vencidos") q = q.eq("situacao_validade", "vencido");
         if (t) q = q.or(`nome.ilike.*${t}*,codigo.ilike.*${t}*,barras.ilike.*${t}*,categoria.ilike.*${t}*,fornecedor.ilike.*${t}*`);
-        q = alerta === "validade" || alerta === "vencidos" ? q.order("validade") : q.order("nome");
-        return q.range(pagina * POR_PAGINA, pagina * POR_PAGINA + POR_PAGINA - 1) as unknown as PromiseLike<{ data: ProdutoView[] | null; error: unknown; count: number | null }>;
+        q = alerta === "validade" || alerta === "vencidos" ? q.order("validade") : q.order(colunaOrdem).order("nome");
+        return q.range(pagina * POR_PAGINA, pagina * POR_PAGINA + POR_PAGINA - 1);
+        };
+        if (ordem === "nome") return montar("nome");
+        // "codigo_ordem" (SQL 0011) ordena 1, 2, 10, 100. Sem o SQL, usa o código como texto
+        // e arruma a ordem dentro da página.
+        const r = await montar("codigo_ordem");
+        if (!r.error || !JSON.stringify(r.error).includes("codigo_ordem")) return r;
+        const r2 = await montar("codigo");
+        return { ...r2, data: r2.data ? [...r2.data].sort(porCodigo) : r2.data };
       },
       async () => {
-        const r = await listarProdutosLocal({ situacao, categoria, alerta: alerta ?? "", busca: buscaAplicada, pagina, porPagina: POR_PAGINA });
+        const r = await listarProdutosLocal({ situacao, categoria, alerta: alerta ?? "", busca: buscaAplicada, pagina, porPagina: POR_PAGINA, ordem });
         totalLocal.current = r.total;
         return r.lista;
       },
@@ -103,7 +118,7 @@ export default function Produtos() {
     }
     setLista(data as ProdutoView[]);
     setTotal(count ?? 0);
-  }, [situacao, categoria, alerta, buscaAplicada, pagina]);
+  }, [situacao, categoria, alerta, buscaAplicada, pagina, ordem]);
 
   useEffect(() => { void carregar(); }, [carregar]);
   useEffect(() => { void carregarListas(); }, [carregarListas]);
@@ -155,7 +170,7 @@ export default function Produtos() {
         }
       />
 
-      <div className="cartao mb-4 grid gap-3 p-4 sm:grid-cols-2 lg:grid-cols-5">
+      <div className="cartao mb-4 grid gap-3 p-4 sm:grid-cols-2 lg:grid-cols-6">
         <div className="sm:col-span-2">
           <label className="rotulo" htmlFor="busca">Pesquisar</label>
           <input id="busca" className="campo" placeholder="Digite ou passe o leitor…" value={busca} onChange={(e) => setBusca(e.target.value)} autoComplete="off" />
@@ -182,6 +197,17 @@ export default function Produtos() {
             <option value="ativos">Ativos</option>
             <option value="inativos">Inativos</option>
             <option value="todos">Todos</option>
+          </select>
+        </div>
+        <div>
+          <label className="rotulo" htmlFor="f-ordem">Ordenar por</label>
+          <select id="f-ordem" className="campo" value={ordem} onChange={(e) => {
+            const o = e.target.value as Ordem;
+            setOrdem(o); setPagina(0);
+            try { localStorage.setItem(CHAVE_ORDEM, o); } catch { /* sem armazenamento: vale só agora */ }
+          }}>
+            <option value="codigo">Código (1, 2, 3…)</option>
+            <option value="nome">Nome (A a Z)</option>
           </select>
         </div>
       </div>

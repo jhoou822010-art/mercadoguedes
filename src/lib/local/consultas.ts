@@ -51,6 +51,12 @@ export async function produtosLocais(): Promise<ProdutoView[]> {
 }
 
 const porNome = (a: { nome: string }, b: { nome: string }) => a.nome.localeCompare(b.nome, "pt-BR");
+/** Ordem pelo código: 1, 2, 10, 100 (como número); códigos com letras vão para o fim. */
+export const porCodigo = (a: { codigo: string; nome: string }, b: { codigo: string; nome: string }) => {
+  const na = /^\d+$/.test(a.codigo.trim()), nb = /^\d+$/.test(b.codigo.trim());
+  if (na !== nb) return na ? -1 : 1;
+  return a.codigo.trim().localeCompare(b.codigo.trim(), "pt-BR", { numeric: true, sensitivity: "base" }) || porNome(a, b);
+};
 
 export async function buscarProdutosLocal(termo: string, somenteAtivos: boolean, limite = 12) {
   const t = sem(termo.trim());
@@ -75,6 +81,7 @@ export interface FiltroProdutos {
   busca: string;
   pagina: number;
   porPagina: number;
+  ordem?: "codigo" | "nome";
 }
 
 export async function listarProdutosLocal(f: FiltroProdutos) {
@@ -86,7 +93,7 @@ export async function listarProdutosLocal(f: FiltroProdutos) {
     (f.alerta !== "validade" || ["vencido", "critico", "proximo"].includes(p.situacao_validade)) &&
     (f.alerta !== "vencidos" || p.situacao_validade === "vencido") &&
     (!t || contem(p.nome, t) || contem(p.codigo, t) || contem(p.barras, t) || contem(p.categoria, t) || contem(p.fornecedor, t)));
-  l = f.alerta === "validade" || f.alerta === "vencidos" ? l.sort((a, b) => (a.validade ?? "9999").localeCompare(b.validade ?? "9999")) : l.sort(porNome);
+  l = f.alerta === "validade" || f.alerta === "vencidos" ? l.sort((a, b) => (a.validade ?? "9999").localeCompare(b.validade ?? "9999")) : l.sort(f.ordem === "nome" ? porNome : porCodigo);
   return { lista: l.slice(f.pagina * f.porPagina, f.pagina * f.porPagina + f.porPagina), total: l.length };
 }
 

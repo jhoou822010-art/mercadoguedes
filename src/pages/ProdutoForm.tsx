@@ -41,10 +41,14 @@ export function ProdutoForm({ produto, categorias, fornecedores, onFechar, onSal
   const [erros, setErros] = useState<Partial<Record<keyof Campos, string>>>({});
   const [salvando, setSalvando] = useState(false);
   const [erroGeral, setErroGeral] = useState("");
+  // Avisos (não impedem salvar): código com letras/símbolos, código de barras fora do padrão.
+  const [confirmouAviso, setConfirmouAviso] = useState(false);
+  const avisos = avisosDosCodigos(c.codigo, c.barras);
 
   const muda = <K extends keyof Campos>(k: K, v: Campos[K]) => {
     setC((x) => ({ ...x, [k]: v }));
     setErros((e) => ({ ...e, [k]: undefined }));
+    if (k === "codigo" || k === "barras") setConfirmouAviso(false);
   };
 
   function validar() {
@@ -73,6 +77,13 @@ export function ProdutoForm({ produto, categorias, fornecedores, onFechar, onSal
     ev.preventDefault();
     setErroGeral("");
     if (!validar()) return;
+    // Primeiro clique com aviso: mostra e pede confirmação. Segundo clique: salva assim mesmo.
+    if ((avisos.codigo || avisos.barras) && !confirmouAviso) {
+      setConfirmouAviso(true);
+      setErroGeral("");
+      document.getElementById("aviso-codigos")?.scrollIntoView({ block: "nearest" });
+      return;
+    }
     setSalvando(true);
     const n = (v: string) => (v.trim() ? lerNumero(v) : 0);
     const texto = (v: string) => v.trim() || null;
@@ -120,7 +131,9 @@ export function ProdutoForm({ produto, categorias, fornecedores, onFechar, onSal
         onChange={(e) => muda(k, e.target.value as never)}
         aria-invalid={Boolean(erros[k])}
       />
-      {erros[k] ? <p className="mt-1 text-xs text-critico-600">{erros[k]}</p> : dica && <p className="mt-1 text-xs text-slate-400">{dica}</p>}
+      {erros[k] ? <p className="mt-1 text-xs text-critico-600">{erros[k]}</p>
+        : (k === "codigo" || k === "barras") && avisos[k] ? <p className="mt-1 text-xs font-semibold text-atencao-700">⚠ {avisos[k]}</p>
+        : dica && <p className="mt-1 text-xs text-slate-400">{dica}</p>}
     </div>
   );
 
@@ -133,12 +146,24 @@ export function ProdutoForm({ produto, categorias, fornecedores, onFechar, onSal
       rodape={
         <>
           <button className="btn-secundario" onClick={onFechar} disabled={salvando}>Cancelar</button>
-          <button className="btn-acao" form="form-produto" disabled={salvando}>{salvando ? "Salvando…" : novo ? "Cadastrar" : "Salvar alterações"}</button>
+          <button className="btn-acao" form="form-produto" disabled={salvando}>
+            {salvando ? "Salvando…" : confirmouAviso ? "Salvar assim mesmo" : novo ? "Cadastrar" : "Salvar alterações"}
+          </button>
         </>
       }
     >
       <form id="form-produto" onSubmit={salvar} className="space-y-5" noValidate>
         {erroGeral && <Aviso cor="critico">{erroGeral}</Aviso>}
+        {confirmouAviso && (avisos.codigo || avisos.barras) && (
+          <div id="aviso-codigos">
+            <Aviso cor="atencao">
+              <strong>Confira o código antes de salvar.</strong>
+              {avisos.codigo && <span className="block">Código interno: {avisos.codigo}</span>}
+              {avisos.barras && <span className="block">Código de barras: {avisos.barras}</span>}
+              <span className="block">Se estiver errado, corrija o campo. Se estiver certo, clique em <strong>Salvar assim mesmo</strong>.</span>
+            </Aviso>
+          </div>
+        )}
         <p className="text-xs text-slate-500">Campos com <span className="text-critico-600">*</span> são obrigatórios.</p>
 
         <fieldset className="grid gap-4 sm:grid-cols-2">
@@ -188,4 +213,35 @@ export function ProdutoForm({ produto, categorias, fornecedores, onFechar, onSal
       </form>
     </Modal>
   );
+}
+
+/** Confere os códigos e devolve avisos em português (vazio = tudo certo). */
+export function avisosDosCodigos(codigo: string, barras: string): { codigo?: string; barras?: string } {
+  const r: { codigo?: string; barras?: string } = {};
+  const cod = codigo.trim();
+  if (cod && !/^\d+$/.test(cod)) {
+    const estranhos = [...new Set(cod.replace(/\d/g, "").split(""))].map((x) => (x === " " ? "espaço" : `“${x}”`)).join(", ");
+    r.codigo = `Costuma ter só números, mas este tem ${estranhos}.`;
+  }
+  const bar = barras.trim();
+  if (bar) {
+    if (!/^\d+$/.test(bar)) {
+      const estranhos = [...new Set(bar.replace(/\d/g, "").split(""))].map((x) => (x === " " ? "espaço" : `“${x}”`)).join(", ");
+      r.barras = `Deveria ter só números, mas este tem ${estranhos}.`;
+    } else if (![8, 12, 13, 14].includes(bar.length)) {
+      r.barras = `Costuma ter 8 ou 13 números, mas este tem ${bar.length}.`;
+    } else if (!digitoVerificadorOk(bar)) {
+      r.barras = "O último número não confere com os outros. Pode ter sido digitado errado; o melhor é passar o leitor.";
+    }
+  }
+  return r;
+}
+
+/** Dígito verificador dos códigos EAN-8, UPC-A (12), EAN-13 e GTIN-14. */
+function digitoVerificadorOk(n: string) {
+  const d = n.split("").map(Number);
+  const dv = d.pop()!;
+  let soma = 0;
+  d.reverse().forEach((x, i) => { soma += x * (i % 2 === 0 ? 3 : 1); });
+  return (10 - (soma % 10)) % 10 === dv;
 }

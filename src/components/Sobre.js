@@ -1,0 +1,14 @@
+import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
+import { useState } from "react";
+import { Modal } from "./Modal";
+import { COPYRIGHT, LINHA_AUTORIA, LINHA_USO, SOFTWARE, VERSAO } from "../lib/sobre";
+/** Janela "Sobre o sistema". */
+export function JanelaSobre({ onFechar }) {
+    return (_jsx(Modal, { aberto: true, titulo: "Sobre o sistema", largura: "sm", onFechar: onFechar, rodape: _jsx("button", { className: "btn-primario", onClick: onFechar, children: "Fechar" }), children: _jsxs("div", { className: "space-y-4 text-sm text-slate-700", children: [_jsxs("div", { children: [_jsx("p", { className: "text-lg font-bold text-petroleo-800", children: SOFTWARE.nome }), _jsx("p", { className: "text-slate-500", children: "Gest\u00E3o de caixa, vendas, estoque, fiado, credi\u00E1rio, etiquetas, relat\u00F3rios e backup." })] }), _jsxs("dl", { className: "grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5", children: [_jsx("dt", { className: "text-slate-500", children: "Autor e desenvolvedor" }), _jsx("dd", { className: "font-medium", children: SOFTWARE.autor }), _jsx("dt", { className: "text-slate-500", children: "Estabelecimento usu\u00E1rio" }), _jsx("dd", { className: "font-medium", children: SOFTWARE.estabelecimento }), _jsx("dt", { className: "text-slate-500", children: "Ano de cria\u00E7\u00E3o" }), _jsx("dd", { className: "font-medium", children: SOFTWARE.ano }), _jsx("dt", { className: "text-slate-500", children: "Vers\u00E3o" }), _jsx("dd", { className: "font-mono text-xs", children: VERSAO })] }), _jsxs("div", { className: "rounded-lg bg-slate-50 p-3 text-xs leading-relaxed text-slate-600", children: [_jsx("p", { className: "font-semibold text-slate-700", children: SOFTWARE.nome }), _jsx("p", { children: LINHA_AUTORIA }), _jsx("p", { children: LINHA_USO }), _jsx("p", { children: COPYRIGHT })] }), _jsx("p", { className: "text-xs text-slate-500", children: "Os dados cadastrados (produtos, vendas, clientes, caixa e estoque) pertencem ao estabelecimento usu\u00E1rio." })] }) }));
+}
+/** Rodapé discreto com a autoria e o link "Sobre o sistema". */
+export function RodapeAutoria({ claro = false }) {
+    const [aberto, setAberto] = useState(false);
+    const cor = claro ? "text-petroleo-100/80" : "text-slate-400";
+    return (_jsxs("footer", { className: `nao-imprimir text-center text-[11px] leading-relaxed ${cor}`, children: [_jsxs("p", { children: [_jsx("span", { className: "whitespace-nowrap font-semibold", children: SOFTWARE.nome }), " \u00B7 ", _jsx("span", { className: "whitespace-nowrap", children: LINHA_AUTORIA }), " \u00B7 ", _jsx("span", { className: "whitespace-nowrap", children: COPYRIGHT }), " ", _jsx("button", { type: "button", className: "underline decoration-dotted underline-offset-2 hover:opacity-80", onClick: () => setAberto(true), children: "Sobre o sistema" })] }), _jsx("p", { children: LINHA_USO }), aberto && _jsx(JanelaSobre, { onFechar: () => setAberto(false) })] }));
+}
