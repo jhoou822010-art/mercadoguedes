@@ -6,6 +6,7 @@ import { cnpjValido, fmtDataHora, lerNumero, mascaraCnpj } from "../lib/format";
 import type { Configuracoes as TConfig, Papel, Perfil, VendaCompleta } from "../lib/types";
 import { CupomVenda, JanelaComprovante } from "../components/Comprovante";
 import { larguraCupom, salvarLarguraCupom } from "../lib/imprimir";
+import { ImpressaoDireta } from "../components/ImpressaoDireta";
 import { reduzirImagem } from "../lib/imagem";
 import { LOGO_PADRAO } from "../lib/marca";
 import { montarPix, normalizarChave, NOME_TIPO_CHAVE, type TipoChavePix } from "../lib/pix";
@@ -367,6 +368,8 @@ export default function Configuracoes() {
           <button type="button" className="btn-secundario mt-3 w-full" onClick={() => setTeste(true)}>🖨 Imprimir comprovante de teste</button>
         </section>
       </div>
+
+      <ImpressaoDireta onTeste={() => setTeste(true)} />
 
       <div className="mt-6">
         <section className="cartao">

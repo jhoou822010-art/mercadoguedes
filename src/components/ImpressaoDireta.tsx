@@ -1,0 +1,73 @@
+import { definirModoImpressao, instaladorAtalhos, useModoImpressao } from "../lib/imprimir";
+import { useToast } from "./Toast";
+
+/** Configurações → impressão deste computador (impressão direta pelo atalho do Windows). */
+export function ImpressaoDireta({ onTeste }: { onTeste: () => void }) {
+  const modo = useModoImpressao();
+  const avisar = useToast();
+
+  function baixarInstalador() {
+    const endereco = window.location.origin + import.meta.env.BASE_URL;
+    const blob = new Blob([instaladorAtalhos(endereco)], { type: "application/octet-stream" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "Instalar-impressao-direta.cmd";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+    avisar("sucesso", "Instalador baixado. Abra a pasta Downloads e dê dois cliques nele.");
+  }
+
+  return (
+    <section className="cartao mt-6 p-5">
+      <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 className="font-semibold">Impressão neste computador</h2>
+          <p className="text-xs text-slate-500">Vale só para este computador (cada caixa configura o seu).</p>
+        </div>
+        <span className={`rounded-full px-3 py-1 text-xs font-semibold ${modo === "direta" ? "bg-ok-50 text-ok-700" : "bg-slate-100 text-slate-600"}`}>
+          {modo === "direta" ? "✓ Impressão direta (sem janela)" : "Janela de impressão (normal)"}
+        </span>
+      </div>
+
+      <div className="grid gap-5 lg:grid-cols-2">
+        <div className="space-y-2 text-sm text-slate-600">
+          <p>
+            Com a <strong>impressão direta</strong>, um clique em <strong>Imprimir</strong> manda o comprovante
+            direto para a impressora, sem abrir a janela de impressão. Funciona no <strong>Windows</strong> com o
+            <strong> Google Chrome</strong> (ou Edge), por um atalho próprio na Área de Trabalho.
+          </p>
+          <ol className="list-decimal space-y-1 pl-5">
+            <li>Clique em <strong>Baixar instalador</strong> e dê dois cliques no arquivo baixado. Ele cria dois atalhos na Área de Trabalho.</li>
+            <li>Abra <strong>“Caixa - configurar impressora”</strong>, entre com usuário e senha, clique em <strong>Imprimir comprovante de teste</strong> e, na janela, escolha a impressora de cupom, o papel <strong>80 mm</strong> (ou 58), margens <strong>Nenhuma</strong>, e imprima. O navegador guarda essa escolha.</li>
+            <li>Feche essa janela e abra <strong>“Caixa - impressão direta”</strong>. A partir daí, é só clicar em Imprimir.</li>
+          </ol>
+        </div>
+        <div className="space-y-3 text-sm">
+          <div className="flex flex-wrap gap-2">
+            <button type="button" className="btn-acao" onClick={baixarInstalador}>⤓ Baixar instalador (Windows)</button>
+            <button type="button" className="btn-secundario" onClick={onTeste}>🖨 Imprimir comprovante de teste</button>
+          </div>
+          <label className="block">
+            <span className="rotulo">Modo deste computador</span>
+            <select className="campo" value={modo} onChange={(e) => definirModoImpressao(e.target.value as "normal" | "direta")}>
+              <option value="normal">Janela de impressão (normal)</option>
+              <option value="direta">Impressão direta (usar com o atalho)</option>
+            </select>
+            <span className="mt-1 block text-xs text-slate-400">Os atalhos já ajustam isto sozinhos. Fora do atalho “impressão direta”, o navegador sempre abre a janela.</span>
+          </label>
+          <div className="rounded-lg bg-atencao-50 px-3 py-2 text-xs text-atencao-700">
+            <p className="font-semibold">Importante</p>
+            <ul className="mt-1 list-disc space-y-0.5 pl-4">
+              <li>A impressora usada é a <strong>escolhida no atalho “configurar impressora”</strong> (ou, se nunca escolheu, a padrão do Windows). Para trocar, abra esse atalho e imprima o teste escolhendo a outra.</li>
+              <li>O atalho tem um <strong>espaço próprio</strong> no computador: entre com usuário e senha nele uma vez e use <strong>sempre ele para vender</strong> neste caixa (vendas feitas sem internet ficam guardadas nele até enviar).</li>
+              <li>O navegador não informa se a impressora está desligada. Se não sair, ligue-a: o Windows imprime o que ficou na fila. O sistema pergunta antes de imprimir o mesmo documento de novo.</li>
+              <li>Relatórios, listas e etiquetas (folha A4) devem ser impressos fora do atalho, para não irem para a impressora de cupom.</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}

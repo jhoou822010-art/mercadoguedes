@@ -282,7 +282,7 @@ export function JanelaComprovante({ titulo, onFechar, children, acaoExtra }: {
             <option value="58">Papel 58 mm</option>
           </select>
           {acaoExtra}
-          <button className="btn-acao" onClick={imprimirCupom} autoFocus>🖨 Imprimir</button>
+          <button className="btn-acao" onClick={() => void imprimirCupom(titulo)} autoFocus>🖨 Imprimir</button>
         </>
       }
     >

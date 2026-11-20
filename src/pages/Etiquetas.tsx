@@ -10,6 +10,7 @@ import { useToast } from "../components/Toast";
 import { ProdutoBusca } from "../components/ProdutoBusca";
 import { CodigoBarras } from "../components/CodigoBarras";
 import { Aviso, Cabecalho, Vazio } from "../components/Ui";
+import { imprimir } from "../lib/imprimir";
 
 type Tamanho = "pequena" | "media" | "grande";
 const TAMANHOS: Record<Tamanho, { rotulo: string; largura: string; altura: string; preco: string; nome: string }> = {
@@ -70,7 +71,7 @@ export default function Etiquetas() {
           titulo="Etiquetas de gôndola"
           descricao="Escolha os produtos, confira a prévia e imprima pela janela de impressão do navegador."
           acoes={
-            <button className="btn-acao" disabled={totalEtiquetas === 0} onClick={() => window.print()}>
+            <button className="btn-acao" disabled={totalEtiquetas === 0} onClick={() => void imprimir("folha", "etiquetas")}>
               🖨 Imprimir {totalEtiquetas > 0 && `(${totalEtiquetas})`}
             </button>
           }

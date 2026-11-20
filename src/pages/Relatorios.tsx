@@ -11,6 +11,7 @@ import type { Movimentacao, ProdutoView } from "../lib/types";
 import { useAuth } from "../contexts/AuthContext";
 import { useToast } from "../components/Toast";
 import { Aviso, Cabecalho, Carregando, SeloTipo, SeloValidade, Vazio } from "../components/Ui";
+import { imprimir } from "../lib/imprimir";
 
 type Rel = "produtos" | "estoque" | "minimo" | "validade" | "movimentacoes";
 const RELATORIOS: { id: Rel; titulo: string; descricao: string }[] = [
@@ -86,7 +87,7 @@ export default function Relatorios() {
   useEffect(() => {
     if (params.get("imprimir") === "1" && !carregando && !impresso) {
       setImpresso(true);
-      setTimeout(() => window.print(), 300);
+      setTimeout(() => void imprimir("folha", `relatorio-${rel}`), 300);
     }
   }, [params, carregando, impresso]);
   const vazio = rel === "movimentacoes" ? movs?.length === 0 : dados?.length === 0;
@@ -98,7 +99,7 @@ export default function Relatorios() {
         descricao="Consulte, imprima ou exporte em CSV para o Excel."
         acoes={
           <>
-            <button className="btn-secundario" disabled={carregando || vazio} onClick={() => window.print()}>🖨 Imprimir</button>
+            <button className="btn-secundario" disabled={carregando || vazio} onClick={() => void imprimir("folha", `relatorio-${rel}`)}>🖨 Imprimir</button>
             <button className="btn-acao" disabled={carregando || vazio} onClick={exportar}>⤓ Exportar CSV</button>
           </>
         }

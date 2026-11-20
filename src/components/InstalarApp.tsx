@@ -1,14 +1,18 @@
 import { useEffect, useState } from "react";
 import { ehIos, estaInstalado, instalar, ouvirInstalacao, podeInstalar } from "../lib/instalar";
 import { Modal } from "./Modal";
+import { useModoImpressao } from "../lib/imprimir";
 
 /** Botão "Instalar aplicativo". Some quando já está instalado ou o navegador não permite. */
 export function InstalarApp({ claro = false }: { claro?: boolean }) {
   const [, atualizar] = useState(0);
   const [ajudaIos, setAjudaIos] = useState(false);
   useEffect(() => ouvirInstalacao(() => atualizar((n) => n + 1)), []);
+  const modoImpressao = useModoImpressao();
 
   if (estaInstalado()) return null;
+  // No atalho de impressão direta não oferece instalar: o app instalado abriria sem a impressão direta.
+  if (modoImpressao === "direta") return null;
   const ios = ehIos();
   if (!podeInstalar() && !ios) return null;
 

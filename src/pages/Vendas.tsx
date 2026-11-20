@@ -19,6 +19,7 @@ import { Aviso, Cabecalho, Carregando, Selo, Vazio } from "../components/Ui";
 import { CampoDocumento, erroDocumento } from "../components/CampoDocumento";
 import { OlhoValores } from "../components/OlhoValores";
 import { useMoeda } from "../lib/privacidade";
+import { imprimir } from "../lib/imprimir";
 
 type Aba = "vendas" | "fiado" | "crediario" | "clientes" | "caixas";
 const ABAS: { id: Aba; rotulo: string }[] = [
@@ -198,7 +199,7 @@ function ListaVendas() {
         </div>
         <div className="flex items-end gap-2">
           <button className="btn-secundario flex-1" disabled={!lista.length} onClick={exportar}>⤓ Planilha</button>
-          <button className="btn-secundario flex-1" disabled={!lista.length} onClick={() => window.print()}>🖨 Imprimir</button>
+          <button className="btn-secundario flex-1" disabled={!lista.length} onClick={() => void imprimir("folha", location.pathname + location.search)}>🖨 Imprimir</button>
         </div>
       </div>
 
@@ -354,7 +355,7 @@ function ListaFiado() {
         <div className="flex gap-2">
           <button className={`btn-pequeno btn ${!mostrarRecebidos ? "bg-petroleo-700 text-white" : "btn-secundario"}`} onClick={() => setMostrarRecebidos(false)}>A receber</button>
           <button className={`btn-pequeno btn ${mostrarRecebidos ? "bg-petroleo-700 text-white" : "btn-secundario"}`} onClick={() => setMostrarRecebidos(true)}>Já recebidos</button>
-          <button className="btn-secundario btn-pequeno" disabled={!lista?.length} onClick={() => window.print()}>🖨 Imprimir lista</button>
+          <button className="btn-secundario btn-pequeno" disabled={!lista?.length} onClick={() => void imprimir("folha", location.pathname + location.search)}>🖨 Imprimir lista</button>
         </div>
         {lista && !mostrarRecebidos && !valoresOcultos && <p className="text-sm">Total a receber: <strong className="text-lg">{moeda(total)}</strong></p>}
       </div>
@@ -498,7 +499,7 @@ function ListaCrediario() {
             </button>
           ))}
           <input className="campo w-56 py-1.5 text-sm" placeholder="Cliente ou nº da venda" value={busca} onChange={(e) => setBusca(e.target.value)} aria-label="Buscar parcela" />
-          <button className="btn-secundario btn-pequeno" disabled={!visiveis.length} onClick={() => window.print()}>🖨 Imprimir lista</button>
+          <button className="btn-secundario btn-pequeno" disabled={!visiveis.length} onClick={() => void imprimir("folha", location.pathname + location.search)}>🖨 Imprimir lista</button>
         </div>
         {lista && filtro !== "pagas" && !valoresOcultos && (
           <p className="text-sm">
@@ -625,7 +626,7 @@ function ListaClientes() {
         <input className="campo w-64 py-1.5 text-sm" placeholder="Buscar por nome, telefone, CPF ou CNPJ" value={busca} onChange={(e) => setBusca(e.target.value)} aria-label="Buscar cliente" />
         <label className="flex items-center gap-2 text-sm"><input type="checkbox" className="accent-petroleo-700" checked={mostrarInativos} onChange={(e) => setMostrarInativos(e.target.checked)} /> Mostrar inativos</label>
         <span className="flex-1" />
-        <button className="btn-secundario btn-pequeno" disabled={!visiveis.length} onClick={() => window.print()}>🖨 Imprimir lista</button>
+        <button className="btn-secundario btn-pequeno" disabled={!visiveis.length} onClick={() => void imprimir("folha", location.pathname + location.search)}>🖨 Imprimir lista</button>
         <button className="btn-acao btn-pequeno" onClick={() => setEditando("novo")}>+ Novo cliente</button>
       </div>
 
