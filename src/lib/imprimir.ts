@@ -203,11 +203,13 @@ export function instaladorAtalhos(enderecoSistema: string, iconeBase64 = "") {
   const ico = iconeBase64.replace(/[^A-Za-z0-9+/=]/g, "");
   const linhasIcone: string[] = [];
   if (ico) {
-    linhasIcone.push('>"%ICO%.b64" echo -----BEGIN CERTIFICATE-----');
-    for (let i = 0; i < ico.length; i += 76) linhasIcone.push(`>>"%ICO%.b64" echo ${ico.slice(i, i + 76)}`);
-    linhasIcone.push('>>"%ICO%.b64" echo -----END CERTIFICATE-----');
-    linhasIcone.push('certutil -f -decode "%ICO%.b64" "%ICO%" >nul 2>&1');
+    // O ícone vai em pedaços de texto (base64) e o PowerShell monta o arquivo .ico.
+    // (Sem certutil: alguns antivírus bloqueiam o certutil.) Se falhar, baixa do site.
+    for (let i = 0; i < ico.length; i += 76) linhasIcone.push(`${i === 0 ? ">" : ">>"}"%ICO%.b64" echo ${ico.slice(i, i + 76)}`);
   }
+  linhasIcone.push(
+    "powershell -NoProfile -ExecutionPolicy Bypass -Command \"try { $t=(Get-Content -LiteralPath ($env:ICO+'.b64')) -join ''; [IO.File]::WriteAllBytes($env:ICO,[Convert]::FromBase64String($t)) } catch { try { Invoke-WebRequest -UseBasicParsing -Uri ($env:URLSIS+'icones/atalho.ico') -OutFile $env:ICO } catch {} }\"",
+  );
   const atalho = (v: string, pasta: string, nome: string, args: string, desc: string) =>
     `$${v}=$w.CreateShortcut(${pasta}+'\\${nome}.lnk'); $${v}.TargetPath=$env:NAV; $${v}.Arguments=${args}; $${v}.Description='${desc}'; if (Test-Path $env:ICO) { $${v}.IconLocation=$env:ICO+',0' }; $${v}.Save(); `;
   const argsDireta = "'--kiosk-printing --user-data-dir='+$q+$env:PERFIL+$q+' --app='+$env:URLSIS+'?impressao=direta'";
@@ -237,6 +239,8 @@ export function instaladorAtalhos(enderecoSistema: string, iconeBase64 = "") {
       atalho("c", "$i", "Caixa - impressao direta", argsDireta, "Gerenciador de Mercado - abre o caixa ao ligar o computador") +
       "\"",
     "if errorlevel 1 goto erro",
+    // Atualiza os ícones da Área de Trabalho (o Windows guarda os antigos na memória).
+    "ie4uinit.exe -show >nul 2>&1",
     "echo  Pronto! Na Area de Trabalho foram criados:",
     "echo    - Caixa - impressao direta      (use este para vender)",
     "echo    - Caixa - configurar impressora (use uma vez para escolher a impressora)",
