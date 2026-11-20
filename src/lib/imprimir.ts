@@ -210,10 +210,24 @@ export function instaladorAtalhos(enderecoSistema: string, iconeBase64 = "") {
   linhasIcone.push(
     "powershell -NoProfile -ExecutionPolicy Bypass -Command \"try { $t=(Get-Content -LiteralPath ($env:ICO+'.b64')) -join ''; [IO.File]::WriteAllBytes($env:ICO,[Convert]::FromBase64String($t)) } catch { try { Invoke-WebRequest -UseBasicParsing -Uri ($env:URLSIS+'icones/atalho.ico') -OutFile $env:ICO } catch {} }\"",
   );
-  const atalho = (v: string, pasta: string, nome: string, args: string, desc: string) =>
-    `$${v}=$w.CreateShortcut(${pasta}+'\\${nome}.lnk'); $${v}.TargetPath=$env:NAV; $${v}.Arguments=${args}; $${v}.Description='${desc}'; if (Test-Path $env:ICO) { $${v}.IconLocation=$env:ICO+',0' }; $${v}.Save(); `;
-  const argsDireta = "'--kiosk-printing --user-data-dir='+$q+$env:PERFIL+$q+' --app='+$env:URLSIS+'?impressao=direta'";
-  const argsConfig = "'--user-data-dir='+$q+$env:PERFIL+$q+' --app='+$env:URLSIS+'?impressao=normal'";
+  /*
+    Os atalhos NÃO apontam direto para o chrome.exe: se o Chrome comum estiver
+    fixado na barra de tarefas, o Windows junta os dois e o ícone fixado abre o
+    Google comum. Por isso cada atalho chama um pequeno lançador (.vbs) que abre
+    o Chrome com os parâmetros certos — o ícone fixado continua sendo o do caixa.
+  */
+  const lancadores =
+    "$vd=$env:PASTA+'\\abrir-caixa.vbs'; $vc=$env:PASTA+'\\configurar-impressora.vbs'; " +
+    "$ad='--kiosk-printing --user-data-dir='+$q+$q+$env:PERFIL+$q+$q+' --app='+$env:URLSIS+'?impressao=direta'; " +
+    "$ac='--user-data-dir='+$q+$q+$env:PERFIL+$q+$q+' --app='+$env:URLSIS+'?impressao=normal'; " +
+    "$l1='Set s = CreateObject('+$q+'WScript.Shell'+$q+')'; " +
+    "Set-Content -LiteralPath $vd -Encoding Unicode -Value @($l1, ('s.Run '+$q+$q+$q+$env:NAV+$q+$q+' '+$ad+$q+', 1, False')); " +
+    "Set-Content -LiteralPath $vc -Encoding Unicode -Value @($l1, ('s.Run '+$q+$q+$q+$env:NAV+$q+$q+' '+$ac+$q+', 1, False')); " +
+    "$ws=$env:WINDIR+'\\System32\\wscript.exe'; if (Test-Path $env:ICO) { $ic=$env:ICO+',0' } else { $ic=$env:NAV+',0' }; ";
+  const atalho = (v: string, pasta: string, nome: string, lancador: string, desc: string) =>
+    `$${v}=$w.CreateShortcut(${pasta}+'\\${nome}.lnk'); $${v}.TargetPath=$ws; $${v}.Arguments=$q+${lancador}+$q; $${v}.WorkingDirectory=$env:PASTA; $${v}.Description='${desc}'; $${v}.IconLocation=$ic; $${v}.Save(); `;
+  const argsDireta = "$vd";
+  const argsConfig = "$vc";
   const linhas = [
     "@echo off",
     "title Gerenciador de Mercado - impressao direta",
@@ -234,6 +248,7 @@ export function instaladorAtalhos(enderecoSistema: string, iconeBase64 = "") {
     'if not exist "%PERFIL%" mkdir "%PERFIL%"',
     ...linhasIcone,
     "powershell -NoProfile -ExecutionPolicy Bypass -Command \"$q=[char]34; $w=New-Object -ComObject WScript.Shell; $d=[Environment]::GetFolderPath('Desktop'); $i=[Environment]::GetFolderPath('Startup'); " +
+      lancadores +
       atalho("a", "$d", "Caixa - impressao direta", argsDireta, "Gerenciador de Mercado - imprime direto, sem abrir a janela de impressao") +
       atalho("b", "$d", "Caixa - configurar impressora", argsConfig, "Gerenciador de Mercado - escolher impressora, papel e margens da impressao direta") +
       atalho("c", "$i", "Caixa - impressao direta", argsDireta, "Gerenciador de Mercado - abre o caixa ao ligar o computador") +
@@ -245,6 +260,10 @@ export function instaladorAtalhos(enderecoSistema: string, iconeBase64 = "") {
     "echo    - Caixa - impressao direta      (use este para vender)",
     "echo    - Caixa - configurar impressora (use uma vez para escolher a impressora)",
     "echo  E o caixa vai abrir sozinho quando o computador ligar.",
+    "echo.",
+    "echo  Para fixar na barra de tarefas: primeiro desafixe o icone antigo do caixa,",
+    "echo  depois clique com o botao direito no atalho da Area de Trabalho",
+    "echo  e escolha Fixar na barra de tarefas.",
     "echo  Para desligar isso: tecla Windows + R, digite shell:startup e apague o atalho.",
     "echo.",
     "pause",
