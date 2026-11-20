@@ -6,6 +6,10 @@ import { Modal } from "../components/Modal";
 import { Aviso } from "../components/Ui";
 import { useToast } from "../components/Toast";
 
+/** Tamanho máximo dos códigos (código de barras: o maior padrão, GTIN-14, tem 14 números). */
+export const MAX_CODIGO = 14;
+export const MAX_BARRAS = 14;
+
 interface Props {
   produto: Produto | null; // null = novo
   categorias: string[];
@@ -54,6 +58,8 @@ export function ProdutoForm({ produto, categorias, fornecedores, onFechar, onSal
   function validar() {
     const e: typeof erros = {};
     if (!c.codigo.trim()) e.codigo = "Informe o código interno.";
+    else if (c.codigo.trim().length > MAX_CODIGO) e.codigo = `O código interno pode ter no máximo ${MAX_CODIGO} caracteres.`;
+    if (c.barras.trim().length > MAX_BARRAS) e.barras = `O código de barras pode ter no máximo ${MAX_BARRAS} números.`;
     if (!c.nome.trim()) e.nome = "Informe a descrição do produto.";
     const num = (k: "custo" | "preco" | "estoque" | "estoque_minimo", obrigatorio: boolean, rotulo: string) => {
       if (!c[k].trim()) {
@@ -116,7 +122,7 @@ export function ProdutoForm({ produto, categorias, fornecedores, onFechar, onSal
     onSalvo();
   }
 
-  const Campo = ({ k, rotulo, obrig, tipo = "text", modo, lista, dica }: { k: keyof Campos; rotulo: string; obrig?: boolean; tipo?: string; modo?: "decimal" | "numeric"; lista?: string; dica?: string }) => (
+  const Campo = ({ k, rotulo, obrig, tipo = "text", modo, lista, dica, max }: { k: keyof Campos; rotulo: string; obrig?: boolean; tipo?: string; modo?: "decimal" | "numeric"; lista?: string; dica?: string; max?: number }) => (
     <div>
       <label className="rotulo" htmlFor={`f-${k}`}>
         {rotulo} {obrig && <span className="text-critico-600" title="Obrigatório">*</span>}
@@ -126,9 +132,10 @@ export function ProdutoForm({ produto, categorias, fornecedores, onFechar, onSal
         type={tipo}
         inputMode={modo}
         list={lista}
+        maxLength={max}
         className={`campo ${erros[k] ? "campo-erro" : ""}`}
         value={c[k] as string}
-        onChange={(e) => muda(k, e.target.value as never)}
+        onChange={(e) => muda(k, (max ? e.target.value.slice(0, max) : e.target.value) as never)}
         aria-invalid={Boolean(erros[k])}
       />
       {erros[k] ? <p className="mt-1 text-xs text-critico-600">{erros[k]}</p>
@@ -168,8 +175,8 @@ export function ProdutoForm({ produto, categorias, fornecedores, onFechar, onSal
 
         <fieldset className="grid gap-4 sm:grid-cols-2">
           <legend className="mb-2 text-sm font-semibold text-petroleo-700">Identificação</legend>
-          {Campo({ k: "codigo", rotulo: "Código interno", obrig: true })}
-          {Campo({ k: "barras", rotulo: "Código de barras", modo: "numeric", dica: "Pode usar o leitor: clique aqui e passe o produto." })}
+          {Campo({ k: "codigo", rotulo: "Código interno", obrig: true, max: MAX_CODIGO, dica: `Até ${MAX_CODIGO} números.` })}
+          {Campo({ k: "barras", rotulo: "Código de barras", modo: "numeric", max: MAX_BARRAS, dica: "Pode usar o leitor: clique aqui e passe o produto." })}
           <div className="sm:col-span-2">{Campo({ k: "nome", rotulo: "Descrição / nome", obrig: true })}</div>
           {Campo({ k: "categoria", rotulo: "Categoria", lista: "lista-categorias" })}
           {Campo({ k: "fornecedor", rotulo: "Fornecedor", lista: "lista-fornecedores" })}

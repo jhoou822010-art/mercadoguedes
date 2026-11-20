@@ -23,7 +23,7 @@ select
     else 'ok'
   end                                                               as situacao_validade,
   case when trim(p.codigo) ~ '^[0-9]+$'
-       then '0' || lpad(ltrim(trim(p.codigo), '0'), 30, '0')
+       then '0' || lpad(ltrim(trim(p.codigo), '0'), 40, '0')
        else '1' || lower(trim(p.codigo))
   end                                                               as codigo_ordem
 from public.produtos p

@@ -4,3 +4,7 @@ dist
 .env.local
 *.log
 .DS_Store
+
+# arquivos gerados por engano pelo tsc (o site usa só os .ts/.tsx)
+src/**/*.js
+*.tsbuildinfo

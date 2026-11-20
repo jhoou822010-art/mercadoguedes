@@ -163,10 +163,12 @@ export function validarLinhas(tabela: string[][]): { linhas: LinhaImportacao[]; 
     });
     const codigo = String(dados.codigo ?? "").trim();
     if (!codigo) erros.push("sem código");
+    else if (codigo.length > 14) erros.push("código com mais de 14 caracteres");
     else if (vistosCodigo.has(codigo)) erros.push(`código repetido na planilha (linha ${vistosCodigo.get(codigo)})`);
     else vistosCodigo.set(codigo, nLinha);
     const barras = String(dados.barras ?? "").trim();
     if (barras) {
+      if (barras.length > 14) erros.push("código de barras com mais de 14 números");
       if (vistosBarras.has(barras)) erros.push(`código de barras repetido na planilha (linha ${vistosBarras.get(barras)})`);
       else vistosBarras.set(barras, nLinha);
     }
