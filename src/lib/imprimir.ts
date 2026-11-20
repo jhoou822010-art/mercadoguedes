@@ -191,13 +191,27 @@ export function imprimirCupom(chave?: string) {
 
 /* ------------------------------ atalhos do Windows ------------------------------ */
 /**
- * Monta o instalador (.cmd) que cria dois atalhos na Área de Trabalho:
- *  - "Caixa - impressão direta": Chrome/Edge com --kiosk-printing num perfil próprio.
- *  - "Caixa - configurar impressora": o mesmo perfil, com a janela de impressão,
- *    para escolher impressora, papel e margens uma vez (o navegador lembra).
+ * Monta o instalador (.cmd) que cria os atalhos:
+ *  - Área de Trabalho: "Caixa - impressao direta" (Chrome/Edge com --kiosk-printing
+ *    num perfil próprio) e "Caixa - configurar impressora" (o mesmo perfil, com a
+ *    janela de impressão, para escolher impressora, papel e margens uma vez).
+ *  - Inicializar do Windows: "Caixa - impressao direta", para abrir sozinho ao ligar.
+ * Os atalhos usam o ícone do supermercado (gravado a partir do texto em base64).
  */
-export function instaladorAtalhos(enderecoSistema: string) {
+export function instaladorAtalhos(enderecoSistema: string, iconeBase64 = "") {
   const url = enderecoSistema.replace(/[^A-Za-z0-9:/._~-]/g, "");
+  const ico = iconeBase64.replace(/[^A-Za-z0-9+/=]/g, "");
+  const linhasIcone: string[] = [];
+  if (ico) {
+    linhasIcone.push('>"%ICO%.b64" echo -----BEGIN CERTIFICATE-----');
+    for (let i = 0; i < ico.length; i += 76) linhasIcone.push(`>>"%ICO%.b64" echo ${ico.slice(i, i + 76)}`);
+    linhasIcone.push('>>"%ICO%.b64" echo -----END CERTIFICATE-----');
+    linhasIcone.push('certutil -f -decode "%ICO%.b64" "%ICO%" >nul 2>&1');
+  }
+  const atalho = (v: string, pasta: string, nome: string, args: string, desc: string) =>
+    `$${v}=$w.CreateShortcut(${pasta}+'\\${nome}.lnk'); $${v}.TargetPath=$env:NAV; $${v}.Arguments=${args}; $${v}.Description='${desc}'; if (Test-Path $env:ICO) { $${v}.IconLocation=$env:ICO+',0' }; $${v}.Save(); `;
+  const argsDireta = "'--kiosk-printing --user-data-dir='+$q+$env:PERFIL+$q+' --app='+$env:URLSIS+'?impressao=direta'";
+  const argsConfig = "'--user-data-dir='+$q+$env:PERFIL+$q+' --app='+$env:URLSIS+'?impressao=normal'";
   const linhas = [
     "@echo off",
     "title Gerenciador de Mercado - impressao direta",
@@ -205,7 +219,9 @@ export function instaladorAtalhos(enderecoSistema: string) {
     "echo  Gerenciador de Mercado - criando os atalhos de impressao direta...",
     "echo.",
     `set "URLSIS=${url}"`,
-    'set "PERFIL=%LOCALAPPDATA%\\GerenciadorMercado\\perfil-caixa"',
+    'set "PASTA=%LOCALAPPDATA%\\GerenciadorMercado"',
+    'set "PERFIL=%PASTA%\\perfil-caixa"',
+    'set "ICO=%PASTA%\\gerenciador.ico"',
     'set "NAV="',
     'if exist "%ProgramFiles%\\Google\\Chrome\\Application\\chrome.exe" set "NAV=%ProgramFiles%\\Google\\Chrome\\Application\\chrome.exe"',
     'if not defined NAV if exist "%ProgramFiles(x86)%\\Google\\Chrome\\Application\\chrome.exe" set "NAV=%ProgramFiles(x86)%\\Google\\Chrome\\Application\\chrome.exe"',
@@ -214,13 +230,18 @@ export function instaladorAtalhos(enderecoSistema: string) {
     'if not defined NAV if exist "%ProgramFiles%\\Microsoft\\Edge\\Application\\msedge.exe" set "NAV=%ProgramFiles%\\Microsoft\\Edge\\Application\\msedge.exe"',
     "if not defined NAV goto semnavegador",
     'if not exist "%PERFIL%" mkdir "%PERFIL%"',
-    "powershell -NoProfile -ExecutionPolicy Bypass -Command \"$q=[char]34; $w=New-Object -ComObject WScript.Shell; $d=[Environment]::GetFolderPath('Desktop'); " +
-      "$a=$w.CreateShortcut($d+'\\Caixa - impressao direta.lnk'); $a.TargetPath=$env:NAV; $a.Arguments='--kiosk-printing --user-data-dir='+$q+$env:PERFIL+$q+' --app='+$env:URLSIS+'?impressao=direta'; $a.Description='Gerenciador de Mercado - imprime direto, sem abrir a janela de impressao'; $a.Save(); " +
-      "$b=$w.CreateShortcut($d+'\\Caixa - configurar impressora.lnk'); $b.TargetPath=$env:NAV; $b.Arguments='--user-data-dir='+$q+$env:PERFIL+$q+' --app='+$env:URLSIS+'?impressao=normal'; $b.Description='Gerenciador de Mercado - escolher impressora, papel e margens da impressao direta'; $b.Save()\"",
+    ...linhasIcone,
+    "powershell -NoProfile -ExecutionPolicy Bypass -Command \"$q=[char]34; $w=New-Object -ComObject WScript.Shell; $d=[Environment]::GetFolderPath('Desktop'); $i=[Environment]::GetFolderPath('Startup'); " +
+      atalho("a", "$d", "Caixa - impressao direta", argsDireta, "Gerenciador de Mercado - imprime direto, sem abrir a janela de impressao") +
+      atalho("b", "$d", "Caixa - configurar impressora", argsConfig, "Gerenciador de Mercado - escolher impressora, papel e margens da impressao direta") +
+      atalho("c", "$i", "Caixa - impressao direta", argsDireta, "Gerenciador de Mercado - abre o caixa ao ligar o computador") +
+      "\"",
     "if errorlevel 1 goto erro",
     "echo  Pronto! Na Area de Trabalho foram criados:",
     "echo    - Caixa - impressao direta      (use este para vender)",
     "echo    - Caixa - configurar impressora (use uma vez para escolher a impressora)",
+    "echo  E o caixa vai abrir sozinho quando o computador ligar.",
+    "echo  Para desligar isso: tecla Windows + R, digite shell:startup e apague o atalho.",
     "echo.",
     "pause",
     "exit /b 0",

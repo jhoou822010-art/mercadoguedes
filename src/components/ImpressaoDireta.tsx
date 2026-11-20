@@ -6,9 +6,20 @@ export function ImpressaoDireta({ onTeste }: { onTeste: () => void }) {
   const modo = useModoImpressao();
   const avisar = useToast();
 
-  function baixarInstalador() {
+  async function baixarInstalador() {
     const endereco = window.location.origin + import.meta.env.BASE_URL;
-    const blob = new Blob([instaladorAtalhos(endereco)], { type: "application/octet-stream" });
+    // Ícone do supermercado para os atalhos (se não carregar, fica o ícone do Chrome).
+    let icone = "";
+    try {
+      const r = await fetch(`${import.meta.env.BASE_URL}icones/atalho.ico`);
+      if (r.ok) {
+        const bytes = new Uint8Array(await r.arrayBuffer());
+        let bin = "";
+        for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+        icone = btoa(bin);
+      }
+    } catch { /* sem ícone */ }
+    const blob = new Blob([instaladorAtalhos(endereco, icone)], { type: "application/octet-stream" });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
     a.download = "Instalar-impressao-direta.cmd";
@@ -39,14 +50,14 @@ export function ImpressaoDireta({ onTeste }: { onTeste: () => void }) {
             <strong> Google Chrome</strong> (ou Edge), por um atalho próprio na Área de Trabalho.
           </p>
           <ol className="list-decimal space-y-1 pl-5">
-            <li>Clique em <strong>Baixar instalador</strong> e dê dois cliques no arquivo baixado. Ele cria dois atalhos na Área de Trabalho.</li>
+            <li>Clique em <strong>Baixar instalador</strong> e dê dois cliques no arquivo baixado. Ele cria dois atalhos na Área de Trabalho, com o ícone do supermercado, e faz o caixa <strong>abrir sozinho quando o computador ligar</strong>.</li>
             <li>Abra <strong>“Caixa - configurar impressora”</strong>, entre com usuário e senha, clique em <strong>Imprimir comprovante de teste</strong> e, na janela, escolha a impressora de cupom, o papel <strong>80 mm</strong> (ou 58), margens <strong>Nenhuma</strong>, e imprima. O navegador guarda essa escolha.</li>
             <li>Feche essa janela e abra <strong>“Caixa - impressão direta”</strong>. A partir daí, é só clicar em Imprimir.</li>
           </ol>
         </div>
         <div className="space-y-3 text-sm">
           <div className="flex flex-wrap gap-2">
-            <button type="button" className="btn-acao" onClick={baixarInstalador}>⤓ Baixar instalador (Windows)</button>
+            <button type="button" className="btn-acao" onClick={() => void baixarInstalador()}>⤓ Baixar instalador (Windows)</button>
             <button type="button" className="btn-secundario" onClick={onTeste}>🖨 Imprimir comprovante de teste</button>
           </div>
           <p className="rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600">
