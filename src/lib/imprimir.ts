@@ -40,18 +40,25 @@ export function salvarLarguraCupom(v: "80" | "58") {
 
 /* --------------------------------- modo do computador --------------------------------- */
 export type ModoImpressao = "normal" | "direta";
+/*
+  O modo direto vale só para a JANELA aberta pelo atalho "Caixa - impressão direta"
+  (o Chrome dele tem --kiosk-printing). Por isso fica no sessionStorage da janela,
+  e não no computador inteiro: o Chrome comum (que sempre abre a janela de
+  impressão) nunca fica marcado como direto.
+*/
 const CHAVE_MODO = "lojafacil.impressao";
 
 export function modoImpressao(): ModoImpressao {
   try {
-    return localStorage.getItem(CHAVE_MODO) === "direta" ? "direta" : "normal";
+    return sessionStorage.getItem(CHAVE_MODO) === "direta" ? "direta" : "normal";
   } catch {
     return "normal";
   }
 }
-export function definirModoImpressao(m: ModoImpressao) {
+function definirModoImpressao(m: ModoImpressao) {
   try {
-    localStorage.setItem(CHAVE_MODO, m);
+    if (m === "direta") sessionStorage.setItem(CHAVE_MODO, "direta");
+    else sessionStorage.removeItem(CHAVE_MODO);
   } catch {
     /* sem armazenamento: continua no modo normal */
   }
@@ -62,17 +69,18 @@ export function useModoImpressao(): ModoImpressao {
   useEffect(() => {
     const f = () => setM(modoImpressao());
     window.addEventListener("lojafacil:impressao", f);
-    window.addEventListener("storage", f);
-    return () => { window.removeEventListener("lojafacil:impressao", f); window.removeEventListener("storage", f); };
+    return () => window.removeEventListener("lojafacil:impressao", f);
   }, []);
   return m;
 }
 
 /**
  * Os atalhos abrem o sistema com ?impressao=direta (impressão direta) ou
- * ?impressao=normal (configurar impressora). Guarda neste computador e tira da barra.
+ * ?impressao=normal (configurar impressora). Guarda nesta janela e tira da barra.
  */
 export function aplicarModoDaUrl() {
+  // Versão anterior guardava o modo no computador inteiro: apaga essa marca antiga.
+  try { localStorage.removeItem(CHAVE_MODO); } catch { /* sem armazenamento */ }
   try {
     const u = new URL(window.location.href);
     const v = u.searchParams.get("impressao");

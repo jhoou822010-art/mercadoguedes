@@ -1,4 +1,4 @@
-import { definirModoImpressao, instaladorAtalhos, useModoImpressao } from "../lib/imprimir";
+import { instaladorAtalhos, useModoImpressao } from "../lib/imprimir";
 import { useToast } from "./Toast";
 
 /** Configurações → impressão deste computador (impressão direta pelo atalho do Windows). */
@@ -49,14 +49,20 @@ export function ImpressaoDireta({ onTeste }: { onTeste: () => void }) {
             <button type="button" className="btn-acao" onClick={baixarInstalador}>⤓ Baixar instalador (Windows)</button>
             <button type="button" className="btn-secundario" onClick={onTeste}>🖨 Imprimir comprovante de teste</button>
           </div>
-          <label className="block">
-            <span className="rotulo">Modo deste computador</span>
-            <select className="campo" value={modo} onChange={(e) => definirModoImpressao(e.target.value as "normal" | "direta")}>
-              <option value="normal">Janela de impressão (normal)</option>
-              <option value="direta">Impressão direta (usar com o atalho)</option>
-            </select>
-            <span className="mt-1 block text-xs text-slate-400">Os atalhos já ajustam isto sozinhos. Fora do atalho “impressão direta”, o navegador sempre abre a janela.</span>
-          </label>
+          <p className="rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600">
+            {modo === "direta"
+              ? "Esta janela foi aberta pelo atalho “Caixa - impressão direta”: o Imprimir manda direto para a impressora."
+              : "Esta janela é o navegador comum: o Imprimir abre a janela de impressão. Para imprimir direto, abra o sistema pelo atalho “Caixa - impressão direta”."}
+          </p>
+          <details className="text-xs text-slate-600">
+            <summary className="cursor-pointer font-semibold text-petroleo-700">Não acho o arquivo baixado</summary>
+            <ol className="mt-1 list-decimal space-y-0.5 pl-5">
+              <li>No Chrome, aperte <strong>Ctrl + J</strong> (lista de downloads).</li>
+              <li>Se aparecer <em>“pode ser perigoso”</em> ou <em>“bloqueado”</em>, clique nos três pontinhos ⋮ do arquivo e em <strong>Manter</strong> (ou <strong>Fazer download de arquivo suspeito</strong>). O arquivo só cria os dois atalhos.</li>
+              <li>Clique em <strong>Mostrar na pasta</strong> e dê <strong>dois cliques</strong> em <strong>Instalar-impressao-direta</strong>.</li>
+              <li>Se o Windows mostrar <em>“O Windows protegeu o computador”</em>, clique em <strong>Mais informações</strong> → <strong>Executar assim mesmo</strong>.</li>
+            </ol>
+          </details>
           <div className="rounded-lg bg-atencao-50 px-3 py-2 text-xs text-atencao-700">
             <p className="font-semibold">Importante</p>
             <ul className="mt-1 list-disc space-y-0.5 pl-4">
