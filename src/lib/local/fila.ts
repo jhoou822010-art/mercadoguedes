@@ -104,6 +104,47 @@ const depoisDoEnvio = new Set<() => void>();
 /** Chamado quando a fila termina de enviar algo (ex.: atualizar a cópia local). */
 export function aoTerminarEnvio(f: () => void) { depoisDoEnvio.add(f); return () => { depoisDoEnvio.delete(f); }; }
 
+/** Qual valor de cada operação pode ser corrigido (quando o servidor recusou por valor absurdo). */
+const CAMPO_VALOR: Record<string, string> = { abrir_caixa: "p_valor_abertura", fechar_caixa: "p_valor_contado", movimento_caixa: "p_valor" };
+export function valorCorrigivel(op: Operacao): number | null {
+  const k = CAMPO_VALOR[op.tipo];
+  return k && op.estado === "erro" ? Number(op.parametros[k] ?? 0) : null;
+}
+
+/**
+ * Corrige o valor digitado errado numa operação que o servidor recusou
+ * (ex.: "numeric field overflow" porque o leitor leu um código de barras no campo
+ * de valor). Ajusta também o registro guardado neste computador e devolve a
+ * operação para a fila. Nada é apagado.
+ */
+export async function corrigirValorOperacao(opId: string, novoValor: number) {
+  const op = await lerUm<Operacao>("fila", opId);
+  if (!op) throw new Error("Operação não encontrada neste computador.");
+  const k = CAMPO_VALOR[op.tipo];
+  if (!k) throw new Error("Esta operação não tem valor para corrigir.");
+  if (!Number.isFinite(novoValor) || novoValor < 0 || (op.tipo === "movimento_caixa" && novoValor <= 0)) throw new Error("Digite um valor válido.");
+  if (novoValor > 1_000_000) throw new Error("Valor muito alto. Confira o valor.");
+  const novo = Math.round(novoValor * 100) / 100;
+  const antigo = Number(op.parametros[k] ?? 0);
+  await gravarVarios("fila", [{ ...op, parametros: { ...op.parametros, [k]: novo }, estado: "pendente", erro: null }]);
+  const alvo = await lerUm<Record<string, unknown>>(op.alvo.tabela, op.alvo.id);
+  if (alvo) {
+    const n = (x: unknown) => Number(x ?? 0);
+    const r2 = (x: number) => Math.round(x * 100) / 100;
+    let novoAlvo: Record<string, unknown> = alvo;
+    if (op.tipo === "abrir_caixa") {
+      const esperado = alvo.valor_esperado == null ? null : r2(n(alvo.valor_esperado) - antigo + novo);
+      novoAlvo = { ...alvo, valor_abertura: novo, ...(esperado == null ? {} : { valor_esperado: esperado, diferenca: alvo.valor_contado == null ? null : r2(n(alvo.valor_contado) - esperado) }) };
+    } else if (op.tipo === "fechar_caixa") {
+      novoAlvo = { ...alvo, valor_contado: novo, diferenca: alvo.valor_esperado == null ? null : r2(novo - n(alvo.valor_esperado)) };
+    } else {
+      novoAlvo = { ...alvo, valor: novo };
+    }
+    await gravarVarios(op.alvo.tabela, [novoAlvo]);
+  }
+  await atualizarResumoFila();
+}
+
 async function marcarAlvo(op: Operacao, estado: EstadoSync, servidorId: number | null) {
   const atual = await lerUm<Record<string, unknown>>(op.alvo.tabela, op.alvo.id);
   if (!atual) return;

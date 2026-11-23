@@ -40,7 +40,8 @@ type CaixaLocal = Caixa & { resumo_local?: ResumoCaixa | null };
 export async function caixaAbertoLocal(usuarioId: string): Promise<CaixaLocal | null> {
   const disp = meuDispositivo();
   const lista = (await lerTodos<CaixaLocal>("caixas"))
-    .filter((c) => c.usuario_id === usuarioId && c.status === "aberto" && (!c.dispositivo || c.dispositivo === disp));
+    // "5001/xxxx": caixa deste computador aberto enquanto outro ainda constava aberto no servidor (SQL 0012).
+    .filter((c) => c.usuario_id === usuarioId && c.status === "aberto" && (!c.dispositivo || c.dispositivo === disp || c.dispositivo.startsWith(`${disp}/`)));
   // Mesmo caixa em duas versões (provisória e a do servidor): fica a do servidor.
   const porUuid = new Map<string, CaixaLocal>();
   const semUuid: CaixaLocal[] = [];
@@ -59,7 +60,20 @@ export async function guardarCaixaDoServidor(c: Caixa) {
   if (!pendente) await gravarVarios("caixas", [c]);
 }
 
+/**
+ * Maior valor aceito num campo de dinheiro digitado no caixa. Protege contra o
+ * leitor de código de barras "digitar" um código (13 números) no campo de valor:
+ * o servidor recusaria e travaria o envio de tudo o que vem depois.
+ */
+export const VALOR_MAXIMO = 1_000_000;
+export function conferirValorDigitado(v: number, rotulo: string) {
+  if (!Number.isFinite(v)) throw new Error(`${rotulo}: valor inválido.`);
+  if (v > VALOR_MAXIMO) throw new Error(`${rotulo} muito alto (R$ ${v.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}). Confira o valor — o leitor de código de barras pode ter lido no campo errado.`);
+}
+
 export async function abrirCaixaLocal(perfil: Perfil, valor: number): Promise<CaixaLocal> {
+  if (!(valor >= 0)) throw new Error("O valor de abertura não pode ser negativo.");
+  conferirValorDigitado(valor, "Valor de abertura");
   const id = idLocal(), u = uuid(), disp = meuDispositivo(), agora = new Date().toISOString();
   const caixa: CaixaLocal = {
     id, usuario_id: perfil.id, usuario_nome: perfil.nome, status: "aberto", valor_abertura: centavos(valor), aberto_em: agora,
@@ -131,6 +145,7 @@ export async function finalizarVendaLocal(a: {
   for (const p of a.pagamentos) {
     if (!FORMAS_VALIDAS.includes(p.forma)) throw new Error(`Forma de pagamento inválida: ${p.forma}.`);
     if (!(p.valor > 0)) throw new Error("Valor de pagamento inválido.");
+    conferirValorDigitado(p.valor, "Valor do pagamento");
     pago = centavos(pago + p.valor);
     if (p.forma === "dinheiro") dinheiro = centavos(dinheiro + p.valor);
   }
@@ -210,6 +225,7 @@ export interface MovimentoCaixa { id: number; caixa_id: number | null; caixa_uui
 
 export async function movimentarCaixaLocal(a: { caixa: Caixa; perfil: Perfil; tipo: "sangria" | "suprimento"; valor: number; observacao: string | null }) {
   if (!(a.valor > 0)) throw new Error("Digite um valor maior que zero.");
+  conferirValorDigitado(a.valor, a.tipo === "sangria" ? "Valor da sangria" : "Valor do suprimento");
   if (a.tipo === "sangria") {
     const r = await resumoCaixaLocal(a.caixa);
     if (centavos(a.valor) > r.dinheiro_esperado) throw new Error("A sangria é maior que o dinheiro que deveria estar no caixa.");
@@ -267,6 +283,7 @@ export async function resumoCaixaLocal(c: Caixa): Promise<ResumoCaixa> {
 /* ------------------------------ fechar ------------------------------ */
 export async function fecharCaixaLocal(a: { caixa: Caixa; perfil: Perfil; valorContado: number; observacao: string | null }): Promise<Caixa> {
   if (!(a.valorContado >= 0)) throw new Error("Informe o valor contado na gaveta.");
+  conferirValorDigitado(a.valorContado, "Valor contado");
   const r = await resumoCaixaLocal(a.caixa);
   const agora = new Date().toISOString(), u = uuid();
   const fechado: CaixaLocal = { ...a.caixa, status: "fechado", fechado_em: agora, fechado_por_nome: a.perfil.nome, valor_contado: centavos(a.valorContado),

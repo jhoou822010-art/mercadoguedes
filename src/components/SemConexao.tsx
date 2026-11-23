@@ -3,7 +3,9 @@ import { useConexao } from "../lib/conexao";
 import { useAuth } from "../contexts/AuthContext";
 import { quando, useEstadoCopia, useFila } from "./CopiaLocal";
 import { Modal } from "./Modal";
-import { operacoesComErro, processarFila, tentarDeNovo, type Operacao } from "../lib/local/fila";
+import { corrigirValorOperacao, operacoesComErro, processarFila, tentarDeNovo, valorCorrigivel, type Operacao } from "../lib/local/fila";
+import { useToast } from "./Toast";
+import { lerNumero } from "../lib/format";
 
 const ROTULO = {
   online: { texto: "Online", cor: "bg-ok-600", dica: "Conectado ao servidor." },
@@ -19,8 +21,26 @@ const NOME_OP: Record<string, string> = { abrir_caixa: "Abertura de caixa", vend
 function JanelaEnvio({ onFechar }: { onFechar: () => void }) {
   const fila = useFila();
   const { estado } = useConexao();
+  const { ehAdmin } = useAuth();
+  const avisar = useToast();
   const [erros, setErros] = useState<Operacao[] | null>(null);
-  useEffect(() => { void operacoesComErro().then(setErros); }, [fila.erros, fila.pendentes]);
+  const [corrigindo, setCorrigindo] = useState<{ id: string; texto: string } | null>(null);
+  const [recarregar, setRecarregar] = useState(0);
+  useEffect(() => { void operacoesComErro().then(setErros); }, [fila.erros, fila.pendentes, recarregar]);
+
+  async function salvarCorrecao() {
+    if (!corrigindo) return;
+    const v = lerNumero(corrigindo.texto);
+    try {
+      await corrigirValorOperacao(corrigindo.id, v);
+      setCorrigindo(null);
+      setRecarregar((n) => n + 1);
+      avisar("sucesso", "Valor corrigido. Clique em “Tentar de novo” para enviar tudo.");
+    } catch (e) {
+      avisar("erro", e instanceof Error ? e.message : String(e));
+    }
+  }
+  const moeda = (n: number) => n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
   return (
     <Modal aberto titulo="Envio para o servidor" largura="lg" onFechar={onFechar}
       rodape={<>
@@ -42,7 +62,27 @@ function JanelaEnvio({ onFechar }: { onFechar: () => void }) {
                   <tr key={o.id}>
                     <td className="whitespace-nowrap">{quando(o.criado_em)}</td>
                     <td className="whitespace-nowrap">{NOME_OP[o.tipo] ?? o.tipo}{o.tipo === "venda" ? ` ${String(o.parametros.p_codigo_local ?? "")}` : ""}</td>
-                    <td>{o.erro}</td>
+                    <td>
+                      {o.erro}
+                      {valorCorrigivel(o) != null && /overflow|muito alto|valor/i.test(o.erro ?? "") && (
+                        <div className="mt-1">
+                          <span className="block text-xs text-critico-700">Valor guardado: <strong>{moeda(valorCorrigivel(o)!)}</strong>{valorCorrigivel(o)! > 1_000_000 ? " — valor digitado errado (provavelmente o leitor de código de barras leu no campo de valor)." : ""}</span>
+                          {ehAdmin ? (
+                            corrigindo?.id === o.id ? (
+                              <span className="mt-1 flex flex-wrap items-center gap-2">
+                                <input className="campo w-32 py-1 text-sm" inputMode="decimal" autoFocus placeholder="0,00" value={corrigindo.texto}
+                                  onChange={(e) => setCorrigindo({ id: o.id, texto: e.target.value })}
+                                  onKeyDown={(e) => { if (e.key === "Enter") void salvarCorrecao(); }} aria-label="Valor correto" />
+                                <button className="btn-acao btn-pequeno" onClick={() => void salvarCorrecao()}>Salvar valor</button>
+                                <button className="btn-secundario btn-pequeno" onClick={() => setCorrigindo(null)}>Cancelar</button>
+                              </span>
+                            ) : (
+                              <button className="btn-secundario btn-pequeno mt-1" onClick={() => setCorrigindo({ id: o.id, texto: "" })}>✎ Corrigir valor</button>
+                            )
+                          ) : <span className="block text-xs text-slate-500">Peça ao administrador para corrigir o valor.</span>}
+                        </div>
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>
